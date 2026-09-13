@@ -207,6 +207,24 @@ mod tests {
     use super::{handle_deep_link, register_waiter, DeepLinkCallbackWaiter};
     use std::time::Duration;
 
+    /// 进程级全局状态 `PENDING_SENDER` 的串行守卫。
+    ///
+    /// 只有下面两个测试会写它，但它们互不隔离：`register_waiter` 会「顶掉并取消」
+    /// 上一个等待器。并行执行时，`registering_new_waiter_cancels_previous_waiter`
+    /// 可能在 `handle_deep_link_keeps_waiter_when_scheme_does_not_match` 注册之后、
+    /// 调用 `handle_deep_link` 之前插进来，把它的发送端换成另一个 state，
+    /// 于是该测试要么 `wait_for_callback()` 收到「登录已取消」、
+    /// 要么因 state 不匹配而失败（只在满载跑全量测试时偶发，单独跑这 3 个测试
+    /// 因为窗口太窄几乎复现不出来）。持有该守卫即可让它们串行执行。
+    static DEEP_LINK_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// 获取全局状态测试守卫；锁中毒时恢复 guard（与生产代码同一套约定）。
+    fn lock_global_state() -> std::sync::MutexGuard<'static, ()> {
+        DEEP_LINK_TEST_MUTEX
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     #[test]
     fn deep_link_scheme_matches_registered_tauri_scheme() {
         let config: serde_json::Value = serde_json::from_str(include_str!("../../tauri.conf.json"))
@@ -228,6 +246,7 @@ mod tests {
 
     #[test]
     fn registering_new_waiter_cancels_previous_waiter() {
+        let _guard = lock_global_state();
         let mut first = register_waiter("first-state");
         first.timeout = Duration::from_millis(20);
         let _second = register_waiter("second-state");
@@ -239,6 +258,7 @@ mod tests {
 
     #[test]
     fn handle_deep_link_keeps_waiter_when_scheme_does_not_match() {
+        let _guard = lock_global_state();
         let waiter = register_waiter("expected-state");
 
         assert!(!handle_deep_link("wrong-scheme://callback?code=ok&state=expected-state").0);
