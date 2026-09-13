@@ -17,8 +17,6 @@
     "build:release": "pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/build-release.ps1",
     "preview": "vite preview",
     "tauri": "tauri",
-    "extract": "lingui extract",
-    "compile": "lingui compile",
     "release": "standard-version",
     "release:minor": "standard-version --release-as minor",
     "release:major": "standard-version --release-as major",
@@ -67,7 +65,6 @@
     "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
-    "@lingui/cli": "5.6.1",
     "@tailwindcss/vite": "^4.0.0",
     "@tauri-apps/cli": "2.10.1",
     "@types/node": "^25.6.0",
