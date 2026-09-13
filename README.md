@@ -52,6 +52,14 @@ Kiro Account Manager 是一个基于 **Tauri 2.x** 的桌面应用，用于集�
 
 > 以下下载链接可能滞后，以 Releases 为准。
 
+> **Windows 选哪个包？**（同一版本任选其一，功能完全相同）
+>
+> | 文件特征 | 安装位置 | 管理员权限 | 适合谁 |
+> |---------|---------|-----------|--------|
+> | `..._x64_zh-CN.msi` | 默认 `%LOCALAPPDATA%\Apps\KiroAccountManager`，安装界面可选 `C:\Program Files` | 默认**不需要**；选「为所有用户安装」时需要 | **推荐**。个人使用、公司/学校电脑无本地管理员权限，以及 IT 统一部署 |
+> | `..._portable.zip` | 解压位置自定 | 不需要 | 不想写入注册表；解压后直接双击 exe 运行（需系统已装 Edge WebView2 运行时，Win10/11 一般自带），**需手动下载新版本覆盖** |
+>
+
 | 平台 | 架构 | 文件格式 | 下载链接 |
 |------|------|---------|---------|
 | 🪟 **Windows** | x64 | MSI 安装包 | [KiroAccountManager_1.9.2_x64_zh-CN.msi](https://github.com/hj01857655/kiro-account-manager/releases/download/v1.9.2/KiroAccountManager_1.9.2_x64_zh-CN.msi) |
@@ -75,7 +83,9 @@ Kiro Account Manager 是一个基于 **Tauri 2.x** 的桌面应用，用于集�
 - **Linux**: x86_64 / ARM64 架构，需要 WebKitGTK 4.0+
 
 **安装说明**：
-- **Windows**: 双击 `.msi` 文件安装
+- **Windows**:
+  - `.msi`：双击安装，默认当前用户安装，**不需要管理员权限**（推荐）
+  - `_portable.zip`：解压后直接运行目录内的 `kiro-account-manager.exe`
 - **macOS**: 打开 `.dmg`，拖动到 Applications，首次运行在「安全性与隐私」中允许
 - **Linux AppImage**: `chmod +x` 后直接运行
 - **Linux DEB**: `sudo dpkg -i` 安装
@@ -357,6 +367,14 @@ A: 隐藏到系统托盘了，点托盘菜单「退出应用」可彻底退出�
 
 **Q: Windows MSI 安装时提示"已安装相同版本"**
 A: 直接继续安装即可（v1.8.3+ 支持覆盖升级）。
+
+**Q: 公司电脑不给管理员权限，装不上怎么办？**
+A: 直接装 `.msi`——默认按当前用户安装（到 `%LOCALAPPDATA%\Apps\KiroAccountManager`），**不需要管理员权限**；只有安装界面选了「为所有用户安装」才会请求提权。也可用 `_portable.zip` 免安装版解压即用。
+
+> 提示：旧版（v1.9.2 及更早）是以「所有用户」机器级安装的，升级时请右键安装包选「以管理员身份运行」，安装程序会自动沿用机器级与原目录；以普通权限安装会多出一份独立安装。
+
+**Q: 免安装版的数据存在哪里？**
+A: 保存在 `%APPDATA%\.kiro-account-manager`（含账号列表、应用设置、用量历史、网关日志，即 `AppData\Roaming\.kiro-account-manager`）。注意 `AppData\Local\com.kiro.account-manager\EBWebView` 只是 WebView2 控件的缓存目录，不是应用数据。因为本工具管理的 Kiro IDE 本身也装在用户目录下，数据跟随账号而非跟随 exe 是更合理的行为，卸载或换版本不会丢失数据。
 
 ---
 

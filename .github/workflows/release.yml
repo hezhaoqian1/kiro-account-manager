@@ -207,6 +207,48 @@ jobs:
           prerelease: false
           args: ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
 
+      # 免安装版：直接把已编译好的 exe 打包成 zip。
+      # 公司电脑无管理员权限、或不想写注册表的用户可以直接解压运行。
+      # 注意：应用数据仍写在 %APPDATA%\.kiro-account-manager（因为它管理的 Kiro IDE
+      # 本身就装在用户目录下），所以这是"免安装"而非"数据随身走"的绿色版。
+      - name: Build portable zip
+        if: startsWith(matrix.platform, 'windows')
+        shell: pwsh
+        run: |
+          $target = "${{ matrix.target }}"
+          if ([string]::IsNullOrWhiteSpace($target)) {
+            $exeDir = "src-tauri/target/release"
+            $arch = "x64"
+          } elseif ($target -like '*aarch64*' -or $target -like '*arm64*') {
+            $exeDir = "src-tauri/target/$target/release"
+            $arch = "arm64"
+          } else {
+            $exeDir = "src-tauri/target/$target/release"
+            $arch = ($target -split '-')[0]
+          }
+          $exe = Join-Path $exeDir "kiro-account-manager.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Error "未找到 exe：$exe"
+            exit 1
+          }
+          $staging = "dist-portable/KiroAccountManager"
+          New-Item -ItemType Directory -Force -Path $staging | Out-Null
+          Copy-Item $exe $staging/
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          $zip = "KiroAccountManager_${version}_${arch}_portable.zip"
+          Compress-Archive -Path "$staging/*" -DestinationPath $zip -CompressionLevel Optimal
+          Write-Output "已生成 $zip"
+
+      - name: Upload portable zip to release
+        if: startsWith(matrix.platform, 'windows')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=${{ github.ref_name }}
+          gh release upload "$VERSION" KiroAccountManager_*_portable.zip --clobber -R ${{ github.repository }}
+
   # 生成 deb/rpm 专用的更新 JSON
   generate-linux-json:
     needs: release
