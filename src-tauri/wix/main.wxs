@@ -20,13 +20,49 @@
             Manufacturer="{{manufacturer}}"
             Version="{{version}}">
 
+        <!-- dual-purpose（单一包同时支持「当前用户 / 所有用户」）：
+             1) InstallerVersion 必须为 500。MSIINSTALLPERUSER 属性在 Windows Installer 4.5
+                及更早版本会被完全忽略，4.x 下这张包会静默退化成 per-machine 并强制 UAC。
+             2) 不能再写 InstallScope="perMachine"：它会把 ALLUSERS 置为 1，与下面的
+                ALLUSERS=2 冲突（WiX 报重复属性）。作用域改由 ALLUSERS + MSIINSTALLPERUSER 控制。 -->
         <Package Id="*"
                  Keywords="Installer"
-                 InstallerVersion="450"
+                 InstallerVersion="500"
                  Languages="0"
                  Compressed="yes"
-                 InstallScope="perMachine"
                  SummaryCodepage="!(loc.TauriCodepage)"/>
+
+        <!-- ============================ 安装范围 ============================
+             ALLUSERS=2 + MSIINSTALLPERUSER=1 是微软「Single Package Authoring」推荐的
+             双用途包初始值，含义是：默认按 per-user 安装，不弹 UAC（MSDN ALLUSERS：
+             「ALLUSERS=2 时，MSIINSTALLPERUSER=1 → per-user，=空 → per-machine」）。
+             安装时用户可在官方 InstallScopeDlg 上改成「为所有用户安装」。 -->
+        <Property Id="ALLUSERS" Value="2" Secure="yes" />
+        <Property Id="MSIINSTALLPERUSER" Value="1" Secure="yes" />
+
+        <!-- WixUI_Advanced（官方 UI 集）要求的两个属性：
+             ApplicationFolderName —— 默认安装目录名，官方用它拼出
+                 per-user  目录 [LocalAppDataFolder]Programs\[ApplicationFolderName]
+                 per-machine 目录 [ProgramFilesFolder][ApplicationFolderName]
+             WixAppFolder —— 官方 InstallScopeDlg 里那组单选按钮绑定的属性，
+                 取值 WixPerUserFolder / WixPerMachineFolder。这里预置为 per-user，
+                 让用户打开界面时默认选中的就是「无需管理员权限」那一项。 -->
+        <Property Id="ApplicationFolderName" Value="{{product_name}}" />
+        <Property Id="WixAppFolder" Value="WixPerUserFolder" />
+
+        <!-- 上一版若是 per-machine 安装的，HKLM 下会留有 InstallDir。
+             记录在 PREV_MACHINE_INSTALL_DIR 里，供下面「沿用 per-machine」的 CA 使用，
+             这样大版本升级时不会以 per-user 上下文去卸载一个 per-machine 产品（那会失败）。
+             只查 HKLM：per-user 安装的目录本来就是官方 per-user 默认值，无需记忆。 -->
+        <Property Id="PREV_MACHINE_INSTALL_DIR">
+            <RegistrySearch Id="PrevMachineInstallDir" Root="HKLM" Key="Software\{{manufacturer}}\{{product_name}}" Name="InstallDir" Type="raw" />
+        </Property>
+
+        <!-- 功能树里三个可选项的命令行开关。默认开启；安装时可在官方功能树里改，
+             静默安装时也可以用 msiexec /i x.msi ADD_TO_PATH=0 关掉。 -->
+        <Property Id="ADD_TO_PATH" Value="1" Secure="yes" />
+        <Property Id="CREATE_DESKTOP_SHORTCUT" Value="1" Secure="yes" />
+        <Property Id="CREATE_STARTMENU_SHORTCUT" Value="1" Secure="yes" />
 
         <!-- Auto launch app after installation, useful for passive mode which usually used in updates -->
         <Property Id="AUTOLAUNCHAPP" Secure="yes" />
@@ -55,6 +91,7 @@
         <WixVariable Id="WixUIDialogBmp" Value="{{dialog_image_path}}" />
         {{/if}}
         {{#if license}}
+        <!-- 官方 AdvancedWelcomeEulaDlg 读的也是 WixUILicenseRtf，与原来的 LicenseAgreementDlg 一致 -->
         <WixVariable Id="WixUILicenseRtf" Value="{{license}}" />
         {{/if}}
 
@@ -69,61 +106,91 @@
         <Property Id="ARPURLUPDATEINFO" Value="{{homepage}}"/>
         {{/if}}
 
-        <!-- Keep legacy HKCU lookup for older installs, but prefer the per-machine MSI path. -->
-        <Property Id="INSTALLDIR">
-          <RegistrySearch Id="PrevInstallDirNoNameHkcu" Root="HKCU" Key="Software\\{{manufacturer}}\\{{product_name}}" Type="raw" />
-          <RegistrySearch Id="PrevInstallDirWithNameHkcu" Root="HKCU" Key="Software\\{{manufacturer}}\\{{product_name}}" Name="InstallDir" Type="raw" />
-          <RegistrySearch Id="PrevInstallDirWithNameHklm" Root="HKLM" Key="Software\\{{manufacturer}}\\{{product_name}}" Name="InstallDir" Type="raw" />
-        </Property>
-
         <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="!(loc.LaunchApp)" />
         <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1"/>
         <CustomAction Id="LaunchApplication" Impersonate="yes" FileKey="Path" ExeCommand="[LAUNCHAPPARGS]" Return="asyncNoWait" />
 
+        <!-- ==================== 目录默认值校正 ====================
+             官方 WixUI_Advanced 用 WixSetPerUserFolder / WixSetPerMachineFolder 两个 CA
+             猜默认目录，判据只看 ALLUSERS 与 Privileged，完全不知道 MSIINSTALLPERUSER。
+             而我们按微软建议默认 ALLUSERS=2 + MSIINSTALLPERUSER=1（恒为 per-user），
+             于是管理员机器上会出现「目录显示 C:\Program Files\...，实际却按 per-user 装」
+             的错位，导致写不进去。下面这组 CA 排在官方 CA 之后做两件事：
+               ① per-user（默认）：把目录纠正回 [WixPerUserFolder]，与上下文一致；
+               ② 检测到上一版是 per-machine 且当前有管理员权限：沿用 per-machine 与旧路径。
+             四个 CA 用 After 串成一条链，顺序确定，不依赖书写顺序。 -->
+        <CustomAction Id="SetAppFolderToPerUser" Property="APPLICATIONFOLDER" Value="[WixPerUserFolder]" Execute="immediate" />
+        <CustomAction Id="SetAppFolderToPrevMachine" Property="APPLICATIONFOLDER" Value="[PREV_MACHINE_INSTALL_DIR]" Execute="immediate" />
+        <CustomAction Id="SetAllUsersToPerMachine" Property="ALLUSERS" Value="1" Execute="immediate" />
+        <CustomAction Id="SetWixAppFolderToPerMachine" Property="WixAppFolder" Value="WixPerMachineFolder" Execute="immediate" />
+
+        <!-- UI 与静默安装两条序列都要排：WixUI_Advanced 把它的 CA 同时注册在两边，
+             静默安装（/qn）走的是 InstallExecuteSequence 这一条。 -->
+        <InstallUISequence>
+            <Custom Action="SetAppFolderToPerUser" After="WixSetPerMachineFolder">ACTION="INSTALL" AND MSIINSTALLPERUSER=1</Custom>
+            <Custom Action="SetAppFolderToPrevMachine" After="SetAppFolderToPerUser">ACTION="INSTALL" AND PREV_MACHINE_INSTALL_DIR AND Privileged</Custom>
+            <Custom Action="SetAllUsersToPerMachine" After="SetAppFolderToPrevMachine">ACTION="INSTALL" AND PREV_MACHINE_INSTALL_DIR AND Privileged</Custom>
+            <Custom Action="SetWixAppFolderToPerMachine" After="SetAllUsersToPerMachine">ACTION="INSTALL" AND PREV_MACHINE_INSTALL_DIR AND Privileged</Custom>
+        </InstallUISequence>
+        <InstallExecuteSequence>
+            <Custom Action="SetAppFolderToPerUser" After="WixSetPerMachineFolder">ACTION="INSTALL" AND MSIINSTALLPERUSER=1</Custom>
+            <Custom Action="SetAppFolderToPrevMachine" After="SetAppFolderToPerUser">ACTION="INSTALL" AND PREV_MACHINE_INSTALL_DIR AND Privileged</Custom>
+            <Custom Action="SetAllUsersToPerMachine" After="SetAppFolderToPrevMachine">ACTION="INSTALL" AND PREV_MACHINE_INSTALL_DIR AND Privileged</Custom>
+            <Custom Action="SetWixAppFolderToPerMachine" After="SetAllUsersToPerMachine">ACTION="INSTALL" AND PREV_MACHINE_INSTALL_DIR AND Privileged</Custom>
+        </InstallExecuteSequence>
+
+        <!-- ==================== UI ====================
+             官方 WixUI_Advanced 的界面流程：
+               首屏 AdvancedWelcomeEulaDlg（欢迎 + 许可协议 + 「安装」按钮）
+                 → 点「高级」→ InstallScopeDlg（官方安装范围页：仅为我 / 所有用户）
+                     per-user   → FeaturesDlg（官方功能树）
+                     per-machine→ InstallDirDlg → FeaturesDlg
+                 → VerifyReadyDlg → 安装 → ExitDialog
+             也就是说：独立的欢迎页没有了（官方把它和许可协议合成一屏），
+             许可协议就是首屏；PATH / 快捷方式交给官方功能树（FeaturesDlg）勾选。 -->
         <UI>
             <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchApplication">WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed</Publish>
 
-            <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR" />
-
-            {{#unless license}}
-            <Publish Dialog="WelcomeDlg"
-                     Control="Next"
-                     Event="NewDialog"
-                     Value="InstallDirDlg"
-                     Order="2">1</Publish>
-            <Publish Dialog="InstallDirDlg"
-                     Control="Back"
-                     Event="NewDialog"
-                     Value="WelcomeDlg"
-                     Order="2">1</Publish>
-            {{/unless}}
+            <!-- 官方 InstallScopeDlg 用 ALLUSERS="{}"（空）表示 per-user、ALLUSERS="1"
+                 表示 per-machine。为了让 Windows Installer 5.0 的双用途语义也正确，
+                 这里同步一下 MSIINSTALLPERUSER：它只在 ALLUSERS=2 时被读取，
+                 1 = per-user，空 = per-machine。
+                 Event 与官方那几条不同（[MSIINSTALLPERUSER] vs [ALLUSERS]），
+                 所以 Order 可以复用 3 而不会撞主键。 -->
+            <Publish Dialog="InstallScopeDlg" Control="Next" Property="MSIINSTALLPERUSER" Value="1" Order="3">WixAppFolder = "WixPerUserFolder"</Publish>
+            <Publish Dialog="InstallScopeDlg" Control="Next" Property="MSIINSTALLPERUSER" Value="{}" Order="3">WixAppFolder = "WixPerMachineFolder"</Publish>
         </UI>
 
-        <UIRef Id="WixUI_InstallDir" />
+        <UIRef Id="WixUI_Advanced" />
 
         <Directory Id="TARGETDIR" Name="SourceDir">
             <Directory Id="DesktopFolder" Name="Desktop">
                 <Component Id="ApplicationShortcutDesktop" Guid="*">
-                    <Shortcut Id="ApplicationDesktopShortcut" Name="{{product_name}}" Description="Runs {{product_name}}" Target="[!Path]" WorkingDirectory="INSTALLDIR" />
+                    <Shortcut Id="ApplicationDesktopShortcut" Name="{{product_name}}" Description="Runs {{product_name}}" Target="[!Path]" WorkingDirectory="APPLICATIONFOLDER" />
                     <RemoveFolder Id="DesktopFolder" On="uninstall" />
-                    <RegistryValue Root="HKCU" Key="Software\\{{manufacturer}}\\{{product_name}}" Name="Desktop Shortcut" Type="integer" Value="1" KeyPath="yes" />
+                    <RegistryValue Root="HKCU" Key="Software\{{manufacturer}}\{{product_name}}" Name="Desktop Shortcut" Type="integer" Value="1" KeyPath="yes" />
                 </Component>
             </Directory>
             <Directory Id="$(var.PlatformProgramFilesFolder)" Name="PFiles">
-                <Directory Id="INSTALLDIR" Name="{{product_name}}"/>
+                <!-- 官方 WixUI_Advanced 要求安装目录的 Id 必须是 APPLICATIONFOLDER，
+                     并由属性 APPLICATIONFOLDER 决定最终路径（父目录只是无属性时的兜底）。
+                     WIXUI_INSTALLDIR 官方片段内部已定义成 APPLICATIONFOLDER，不能重复声明。 -->
+                <Directory Id="APPLICATIONFOLDER" Name="{{product_name}}"/>
             </Directory>
             <Directory Id="ProgramMenuFolder">
                 <Directory Id="ApplicationProgramsFolder" Name="{{product_name}}"/>
             </Directory>
         </Directory>
 
-        <DirectoryRef Id="INSTALLDIR">
+        <DirectoryRef Id="APPLICATIONFOLDER">
             <Component Id="RegistryEntries" Guid="*">
-                <RegistryKey Root="HKLM" Key="Software\\{{manufacturer}}\\{{product_name}}">
-                    <RegistryValue Name="InstallDir" Type="string" Value="[INSTALLDIR]" KeyPath="yes" />
+                <!-- HKMU = MSI 的 Root -1：per-machine 时写 HKLM，per-user 时自动写 HKCU。
+                     写死 HKLM 会导致 per-user 安装失败（无权写 HKLM）。 -->
+                <RegistryKey Root="HKMU" Key="Software\{{manufacturer}}\{{product_name}}">
+                    <RegistryValue Name="InstallDir" Type="string" Value="[APPLICATIONFOLDER]" KeyPath="yes" />
                 </RegistryKey>
                 {{#each deep_link_protocols as |protocol| ~}}
-                <RegistryKey Root="HKLM" Key="Software\Classes\\{{protocol}}">
+                <RegistryKey Root="HKMU" Key="Software\Classes\{{protocol}}">
                     <RegistryValue Type="string" Name="URL Protocol" Value=""/>
                     <RegistryValue Type="string" Value="URL:{{bundle_id}} protocol"/>
                     <RegistryKey Key="DefaultIcon">
@@ -164,6 +231,22 @@
             </Component>
             {{/if}}
             {{resources}}
+            <!-- PATH 环境变量。此前 Feature "Environment" 只是空壳：组件里没有任何
+                 Environment 元素，勾了也无效。这里补上真正写入的实现。
+                 System="no" → 写入当前用户的 PATH（HKCU），不需要管理员权限，
+                 且与 dual-purpose 的 per-user 上下文一致。
+                 Part="last" → 追加到已有 PATH 末尾，不覆盖用户原有内容。 -->
+            <Component Id="EnvPath" Guid="*">
+                <Environment Id="EnvPathEntry" Name="PATH" Value="[APPLICATIONFOLDER]"
+                             Action="set" System="no" Part="last" Permanent="no" />
+                <RegistryValue Root="HKMU"
+                               Key="Software\{{manufacturer}}\{{product_name}}"
+                               Name="EnvPath"
+                               Type="integer"
+                               Value="1"
+                               KeyPath="yes" />
+            </Component>
+
             <Component Id="CMP_UninstallShortcut" Guid="*">
                 <Shortcut Id="UninstallShortcut"
                           Name="Uninstall {{product_name}}"
@@ -171,11 +254,11 @@
                           Target="[System64Folder]msiexec.exe"
                           Arguments="/x [ProductCode]" />
 
-                <RemoveFolder Id="INSTALLDIR"
+                <RemoveFolder Id="APPLICATIONFOLDER"
                               On="uninstall" />
 
-                <RegistryValue Root="HKLM"
-                               Key="Software\\{{manufacturer}}\\{{product_name}}"
+                <RegistryValue Root="HKMU"
+                               Key="Software\{{manufacturer}}\{{product_name}}"
                                Name="Uninstaller Shortcut"
                                Type="integer"
                                Value="1"
@@ -190,11 +273,11 @@
                     Description="Runs {{product_name}}"
                     Target="[!Path]"
                     Icon="ProductIcon"
-                    WorkingDirectory="INSTALLDIR">
+                    WorkingDirectory="APPLICATIONFOLDER">
                     <ShortcutProperty Key="System.AppUserModel.ID" Value="{{bundle_id}}"/>
                 </Shortcut>
                 <RemoveFolder Id="ApplicationProgramsFolder" On="uninstall"/>
-                <RegistryValue Root="HKCU" Key="Software\\{{manufacturer}}\\{{product_name}}" Name="Start Menu Shortcut" Type="integer" Value="1" KeyPath="yes"/>
+                <RegistryValue Root="HKCU" Key="Software\{{manufacturer}}\{{product_name}}" Name="Start Menu Shortcut" Type="integer" Value="1" KeyPath="yes"/>
            </Component>
         </DirectoryRef>
 
@@ -208,12 +291,13 @@
         </Feature>
         {{/each~}}
 
+        <!-- 主功能 Display="expand"：官方功能树会把它展开，露出下面三个可选项 -->
         <Feature
                 Id="MainProgram"
-                Title="Application"
+                Title="!(loc.InstallAppFeature)"
                 Description="!(loc.InstallAppFeature)"
                 Level="1"
-                ConfigurableDirectory="INSTALLDIR"
+                ConfigurableDirectory="APPLICATIONFOLDER"
                 AllowAdvertise="no"
                 Display="expand"
                 Absent="disallow">
@@ -230,29 +314,49 @@
                 <ComponentRef Id="UpdateTaskUninstaller" />
             {{/if}}
 
-            <Feature Id="ShortcutsFeature"
-                Title="Shortcuts"
-                Level="1">
-                <ComponentRef Id="Path"/>
-                <ComponentRef Id="CMP_UninstallShortcut" />
-                <ComponentRef Id="ApplicationShortcut" />
-                <ComponentRef Id="ApplicationShortcutDesktop" />
-            </Feature>
-
-            <Feature
-                Id="Environment"
-                Title="PATH Environment Variable"
-                Description="!(loc.PathEnvVarFeature)"
-                Level="1"
-                Absent="allow">
+            <!-- 主程序本体与卸载快捷方式始终安装，不进功能树 -->
             <ComponentRef Id="Path"/>
             {{#each binaries as |bin| ~}}
             <ComponentRef Id="{{ bin.id }}"/>
             {{/each~}}
+            <ComponentRef Id="CMP_UninstallShortcut" />
+
+            <!-- 下面三项为官方功能树里的可选项：Level=1 默认勾选，
+                 Absent="allow" 允许用户在树里取消；Condition 让静默安装也能用
+                 ADD_TO_PATH=0 / CREATE_DESKTOP_SHORTCUT=0 / CREATE_STARTMENU_SHORTCUT=0 关掉。 -->
+            <Feature Id="Environment"
+                Title="!(loc.PathEnvVarFeature)"
+                Description="!(loc.PathEnvVarFeature)"
+                Level="1"
+                Display="expand"
+                Absent="allow">
+                <ComponentRef Id="EnvPath"/>
+                <Condition Level="0">ADD_TO_PATH = "0"</Condition>
+            </Feature>
+
+            <Feature Id="DesktopShortcutFeature"
+                Title="桌面快捷方式"
+                Level="1"
+                Display="expand"
+                Absent="allow">
+                <ComponentRef Id="ApplicationShortcutDesktop" />
+                <Condition Level="0">CREATE_DESKTOP_SHORTCUT = "0"</Condition>
+            </Feature>
+
+            <Feature Id="StartMenuShortcutFeature"
+                Title="开始菜单快捷方式"
+                Level="1"
+                Display="expand"
+                Absent="allow">
+                <ComponentRef Id="ApplicationShortcut" />
+                <Condition Level="0">CREATE_STARTMENU_SHORTCUT = "0"</Condition>
             </Feature>
         </Feature>
 
-        <Feature Id="External" AllowAdvertise="no" Absent="disallow">
+        <!-- Display="hidden"：External 装的是外部组件（sidecar / 合并模块等），
+             始终 Level=1 安装，但不必出现在官方功能树里（它本来也没有标题）。
+             WixUI_InstallDir 时代没有功能树所以无所谓，换成 WixUI_Advanced 后会露出来。 -->
+        <Feature Id="External" AllowAdvertise="no" Absent="disallow" Display="hidden" Level="1">
             {{#each component_group_refs as |id| ~}}
             <ComponentGroupRef Id="{{ id }}"/>
             {{/each~}}
@@ -278,7 +382,7 @@
         </Property>
 
         {{#if download_bootstrapper}}
-        <CustomAction Id='DownloadAndInvokeBootstrapper' Directory="INSTALLDIR" Execute="deferred" ExeCommand='powershell.exe -NoProfile -windowstyle hidden try [\{] [\[]Net.ServicePointManager[\]]::SecurityProtocol = [\[]Net.SecurityProtocolType[\]]::Tls12 [\}] catch [\{][\}]; Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile "$env:TEMP\MicrosoftEdgeWebview2Setup.exe" ; Start-Process -FilePath "$env:TEMP\MicrosoftEdgeWebview2Setup.exe" -ArgumentList ({{webview_installer_args}} &apos;/install&apos;) -Wait' Return='check'/>
+        <CustomAction Id='DownloadAndInvokeBootstrapper' Directory="APPLICATIONFOLDER" Execute="deferred" ExeCommand='powershell.exe -NoProfile -Command &quot;&amp; { Invoke-WebRequest -Uri https://go.microsoft.com/fwlink/p/?LinkId=2124703 -OutFile $env:TEMP\wv2setup.exe; Start-Process $env:TEMP\wv2setup.exe -ArgumentList {{webview_installer_args}} -Wait }&quot;' Return='check'/>
         <InstallExecuteSequence>
             <Custom Action='DownloadAndInvokeBootstrapper' Before='InstallFinalize'>
                 <![CDATA[NOT(REMOVE OR INSTALLED_WEBVIEW2_VERSION)]]>
@@ -331,7 +435,7 @@
         <CustomAction
             Id="CreateUpdateTask"
             Return="check"
-            Directory="INSTALLDIR"
+            Directory="APPLICATIONFOLDER"
             Execute="commit"
             Impersonate="yes"
             ExeCommand="powershell.exe -WindowStyle hidden .\install-task.ps1" />
@@ -343,7 +447,7 @@
         <CustomAction
             Id="DeleteUpdateTask"
             Return="check"
-            Directory="INSTALLDIR"
+            Directory="APPLICATIONFOLDER"
             ExeCommand="powershell.exe -WindowStyle hidden .\uninstall-task.ps1" />
         <InstallExecuteSequence>
             <Custom Action="DeleteUpdateTask" Before='InstallFinalize'>
@@ -356,6 +460,6 @@
           <Custom Action="LaunchApplication" After="InstallFinalize">AUTOLAUNCHAPP AND NOT Installed</Custom>
         </InstallExecuteSequence>
 
-        <SetProperty Id="ARPINSTALLLOCATION" Value="[INSTALLDIR]" After="CostFinalize"/>
+        <SetProperty Id="ARPINSTALLLOCATION" Value="[APPLICATIONFOLDER]" After="CostFinalize"/>
     </Product>
 </Wix>

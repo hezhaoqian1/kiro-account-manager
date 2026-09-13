@@ -63,7 +63,8 @@
     "active": true,
     "createUpdaterArtifacts": true,
     "category": "DeveloperTool",
-    "copyright": "© 2025 hj01857655",
+    "copyright": "© 2026 hj01857655",
+    "publisher": "Kiro",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -72,10 +73,11 @@
       "icons/icon.ico"
     ],
     "targets": ["msi", "app", "dmg", "deb", "rpm", "appimage"],
+    "licenseFile": "EULA.rtf",
     "windows": {
       "allowDowngrades": false,
       "webviewInstallMode": {
-        "type": "downloadBootstrapper",
+        "type": "embedBootstrapper",
         "silent": true
       },
       "wix": {
