@@ -3614,8 +3614,13 @@ mod tests {
             .conversation_state
             .history
             .expect("history should exist");
-        assert_eq!(history.len(), 2);
-        match &history[0] {
+        // sanitize_history 会补全结构：
+        //   [0] 占位 User("Hello")（保证以 user 开头）
+        //   [1] Assistant（携带 toolUses）
+        //   [2] User（携带 toolResults）
+        //   [3] 占位 Assistant("understood")（修复两个连续 user）
+        assert_eq!(history.len(), 4);
+        match &history[1] {
             HistoryItem::Assistant {
                 assistant_response_message,
             } => {
@@ -3626,7 +3631,7 @@ mod tests {
             }
             other => panic!("unexpected history item: {other:?}"),
         }
-        match &history[1] {
+        match &history[2] {
             HistoryItem::User { user_input_message } => {
                 let context = user_input_message
                     .user_input_message_context
@@ -3822,13 +3827,14 @@ mod tests {
             Some(json!({ "type": "function", "name": "search_docs" }))
         );
         assert_eq!(converted.tools.as_ref().map(Vec::len), Some(1));
+        // 工具名会被规范化为 camelCase（Kiro API 要求）
         assert_eq!(
             converted
                 .tools
                 .as_ref()
                 .and_then(|items| items.first())
                 .map(|tool| tool.function.name.as_str()),
-            Some("search_docs")
+            Some("searchDocs")
         );
         assert_eq!(converted.messages.len(), 3);
         assert_eq!(converted.messages[0].role, "user");
@@ -3838,6 +3844,7 @@ mod tests {
                 { "type": "input_text", "text": "先检索 gateway" }
             ]))
         );
+        // 工具调用名在归一化阶段保持原样（构造上游 payload 时才做 camelCase 转换）
         assert_eq!(
             converted.messages[1]
                 .tool_calls
@@ -4588,7 +4595,8 @@ mod tests {
             .history
             .expect("history should exist");
 
-        match &history[0] {
+        // history[0] 是 sanitize_history 补的占位 User("Hello")，assistant 消息在 [1]
+        match &history[1] {
             HistoryItem::Assistant {
                 assistant_response_message,
             } => {
@@ -4674,8 +4682,8 @@ mod tests {
         );
         assert_eq!(
             get_internal_model_id("claude-sonnet-latest")
-                .expect("latest sonnet alias should default to 4.5"),
-            "claude-sonnet-4.5"
+                .expect("latest sonnet alias should resolve to Sonnet 5"),
+            "claude-sonnet-5"
         );
         // "sonnet" 默认指向当前最新的 Sonnet（Sonnet 4.6）
         assert_eq!(
@@ -4691,13 +4699,20 @@ mod tests {
             .map(|model| model.id)
             .collect();
 
-        // Kiro ListAvailableModels API 实际返回的是带点号的 ID
-        assert!(model_ids.iter().any(|id| id == "claude-opus-4.6"));
-        assert!(model_ids.iter().any(|id| id == "claude-opus-4.6-thinking"));
-        assert!(model_ids.iter().any(|id| id == "claude-sonnet-4.6"));
+        // Kiro ListAvailableModels API 实际返回的是带点号的 ID。
+        // 注意：Claude 模型只保留 -thinking 变体，不带后缀的已下线。
+        assert!(model_ids
+            .iter()
+            .any(|id| id == "claude-opus-4.6-thinking"));
         assert!(model_ids
             .iter()
             .any(|id| id == "claude-sonnet-4.6-thinking"));
+        // 4.6 之上的新版本
+        assert!(model_ids.iter().any(|id| id == "claude-opus-4.7-thinking"));
+        assert!(model_ids.iter().any(|id| id == "claude-opus-4.8-thinking"));
+        assert!(model_ids
+            .iter()
+            .any(|id| id == "claude-sonnet-5-thinking"));
     }
 
     #[test]

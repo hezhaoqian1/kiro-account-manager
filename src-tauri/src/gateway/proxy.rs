@@ -5507,8 +5507,8 @@ mod tests {
 
         let responses_request = normalize_request(ResponseFormat::Responses, &responses_payload)
             .expect("responses payload should normalize");
-        let chat_request = normalize_request(ResponseFormat::Responses, &chat_payload)
-            .expect("chat payload should normalize through the OpenAI protocol adapter");
+        let chat_request = normalize_request(ResponseFormat::OpenAI, &chat_payload)
+            .expect("chat payload should normalize through the OpenAI Chat protocol");
 
         assert_eq!(responses_request.model, "claude-sonnet-4");
         assert!(responses_request.stream);
@@ -5528,7 +5528,7 @@ mod tests {
                 .as_ref()
                 .and_then(|items| items.first())
                 .map(|tool| tool.function.name.as_str()),
-            Some("search_docs")
+            Some("searchDocs")
         );
         assert_eq!(responses_request.messages.len(), 3);
         assert_eq!(
@@ -5559,7 +5559,15 @@ mod tests {
                 .map(|call| &call.function.arguments),
             Some(&"{\"q\":\"gateway\"}".to_string())
         );
-        assert_eq!(chat_request.messages[2].content, Some(json!("命中结果")));
+        // 工具结果已结构化为 tool_result 内容块，不再被双重序列化成字符串
+        assert_eq!(
+            chat_request.messages[2].content,
+            Some(json!([{
+                "type": "tool_result",
+                "tool_use_id": "call_1",
+                "content": "命中结果"
+            }]))
+        );
     }
 
     #[test]

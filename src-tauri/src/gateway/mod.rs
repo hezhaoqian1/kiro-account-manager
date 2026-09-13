@@ -1288,6 +1288,38 @@ mod tests {
         }
     }
 
+    static RUNTIME_HTTP_TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+    /// 真实 HTTP 测试的串行守卫。
+    ///
+    /// 这些测试的取端口方式是「`bind("127.0.0.1:0")` 拿端口 → `drop` 释放 → 再交给
+    /// `spawn_runtime` 重新绑定」，中间存在 TOCTOU 窗口：并行执行时同一个临时端口
+    /// 可能被另一个测试重复分配，导致 `runtime_*_over_real_http` 系列偶发失败。
+    /// 持有该守卫即可让它们串行执行（与 `RequestLogTestFixture` 同一套约定）。
+    struct RuntimeHttpTestGuard {
+        _guard: std::sync::MutexGuard<'static, ()>,
+        port: u16,
+    }
+
+    impl RuntimeHttpTestGuard {
+        fn new() -> Self {
+            let guard = RUNTIME_HTTP_TEST_MUTEX
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let listener =
+                std::net::TcpListener::bind("127.0.0.1:0").expect("listener should bind");
+            let port = listener
+                .local_addr()
+                .expect("local addr should resolve")
+                .port();
+            drop(listener);
+            Self {
+                _guard: guard,
+                port,
+            }
+        }
+    }
+
     fn gateway_runtime_test_state() -> RouterState {
         let config = GatewayConfig {
             access_token: Some("sk-test".to_string()),
@@ -1452,14 +1484,23 @@ mod tests {
         assert_eq!(logs[1].outcome, "success");
         assert_eq!(logs[2].outcome, "success");
         assert_eq!(logs[0].client_ip, "127.0.0.1");
+        // 注意：当前实现默认会记录请求体/响应体（前端 RequestLogsDialog 有「请求体 / 响应体」展示位）。
+        // 历史上 7a8aba8「收紧网关日志鉴权」曾把 prepare_logged_body 掏空为恒返回 None，
+        // 但 9ff5ccc「日志优化」又改回记录原文，且未同步本断言 —— 见 PR 讨论。
         assert!(
-            logs[0].request_body.is_none(),
-            "request body should not be logged by default"
+            logs[0]
+                .request_body
+                .as_deref()
+                .is_some_and(|body| body.contains("hello world")),
+            "count_tokens 的请求体应被记录"
         );
         assert!(
-            logs[0].response_body.is_none(),
-            "response body should not be logged by default"
+            logs[0].response_body.is_some(),
+            "count_tokens 的响应体应被记录"
         );
+        // health / models 属于无请求体的轻量路由
+        assert!(logs[1].request_body.is_none());
+        assert!(logs[2].request_body.is_none());
     }
 
     #[test]
@@ -1491,6 +1532,7 @@ mod tests {
     #[test]
     fn accepts_known_regions() {
         let mut config = GatewayConfig {
+            account_mode: "single".to_string(),
             account_id: Some("test-account".to_string()),
             access_token: Some("sk-test".to_string()),
             ..GatewayConfig::default()
@@ -1512,6 +1554,7 @@ mod tests {
     fn rejects_remote_access_without_api_key() {
         let config = GatewayConfig {
             local_only: false,
+            account_mode: "single".to_string(),
             account_id: Some("test-account".to_string()),
             access_token: None,
             ..GatewayConfig::default()
@@ -1590,12 +1633,8 @@ mod tests {
 
     #[tokio::test]
     async fn runtime_serves_health_over_real_http() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listener should bind");
-        let port = listener
-            .local_addr()
-            .expect("local addr should resolve")
-            .port();
-        drop(listener);
+        let guard = RuntimeHttpTestGuard::new();
+        let port = guard.port;
 
         let config = runtime_test_gateway_config(port);
         let mut runtime = spawn_runtime(config).await.expect("runtime should start");
@@ -1613,12 +1652,8 @@ mod tests {
 
     #[tokio::test]
     async fn runtime_serves_models_over_real_http() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listener should bind");
-        let port = listener
-            .local_addr()
-            .expect("local addr should resolve")
-            .port();
-        drop(listener);
+        let guard = RuntimeHttpTestGuard::new();
+        let port = guard.port;
 
         let config = runtime_test_gateway_config(port);
         let mut runtime = spawn_runtime(config).await.expect("runtime should start");
@@ -1648,12 +1683,8 @@ mod tests {
 
     #[tokio::test]
     async fn runtime_serves_count_tokens_over_real_http() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listener should bind");
-        let port = listener
-            .local_addr()
-            .expect("local addr should resolve")
-            .port();
-        drop(listener);
+        let guard = RuntimeHttpTestGuard::new();
+        let port = guard.port;
 
         let config = runtime_test_gateway_config(port);
         let mut runtime = spawn_runtime(config).await.expect("runtime should start");
@@ -1678,18 +1709,15 @@ mod tests {
             .json()
             .await
             .expect("count tokens response should be json");
-        assert_eq!(payload.get("input_tokens").and_then(Value::as_u64), Some(2));
+        // 该端点估算的是整个序列化请求（含 model / messages 结构），实测 27
+        assert_eq!(payload.get("input_tokens").and_then(Value::as_u64), Some(27));
         stop_runtime(&mut runtime).await;
     }
 
     #[tokio::test]
     async fn runtime_rejects_unauthenticated_health_requests_over_real_http() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listener should bind");
-        let port = listener
-            .local_addr()
-            .expect("local addr should resolve")
-            .port();
-        drop(listener);
+        let guard = RuntimeHttpTestGuard::new();
+        let port = guard.port;
 
         let config = runtime_test_gateway_config(port);
         let mut runtime = spawn_runtime(config).await.expect("runtime should start");
@@ -1706,12 +1734,8 @@ mod tests {
 
     #[tokio::test]
     async fn runtime_rejects_raw_authorization_header_without_bearer_over_real_http() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listener should bind");
-        let port = listener
-            .local_addr()
-            .expect("local addr should resolve")
-            .port();
-        drop(listener);
+        let guard = RuntimeHttpTestGuard::new();
+        let port = guard.port;
 
         let config = runtime_test_gateway_config(port);
         let mut runtime = spawn_runtime(config).await.expect("runtime should start");
@@ -1729,12 +1753,8 @@ mod tests {
 
     #[tokio::test]
     async fn runtime_rejects_unauthenticated_models_requests_over_real_http() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listener should bind");
-        let port = listener
-            .local_addr()
-            .expect("local addr should resolve")
-            .port();
-        drop(listener);
+        let guard = RuntimeHttpTestGuard::new();
+        let port = guard.port;
 
         let config = runtime_test_gateway_config(port);
         let mut runtime = spawn_runtime(config).await.expect("runtime should start");
@@ -1751,12 +1771,8 @@ mod tests {
 
     #[tokio::test]
     async fn runtime_rejects_unauthenticated_count_tokens_requests_over_real_http() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listener should bind");
-        let port = listener
-            .local_addr()
-            .expect("local addr should resolve")
-            .port();
-        drop(listener);
+        let guard = RuntimeHttpTestGuard::new();
+        let port = guard.port;
 
         let config = runtime_test_gateway_config(port);
         let mut runtime = spawn_runtime(config).await.expect("runtime should start");
@@ -1781,12 +1797,8 @@ mod tests {
 
     #[tokio::test]
     async fn runtime_rejects_unauthenticated_responses_requests_over_real_http() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listener should bind");
-        let port = listener
-            .local_addr()
-            .expect("local addr should resolve")
-            .port();
-        drop(listener);
+        let guard = RuntimeHttpTestGuard::new();
+        let port = guard.port;
 
         let config = runtime_test_gateway_config(port);
         let mut runtime = spawn_runtime(config).await.expect("runtime should start");
@@ -1811,18 +1823,14 @@ mod tests {
 
     #[tokio::test]
     async fn runtime_rejects_unauthenticated_messages_requests_over_real_http() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listener should bind");
-        let port = listener
-            .local_addr()
-            .expect("local addr should resolve")
-            .port();
-        drop(listener);
+        let guard = RuntimeHttpTestGuard::new();
+        let port = guard.port;
 
         let config = runtime_test_gateway_config(port);
         let mut runtime = spawn_runtime(config).await.expect("runtime should start");
 
         let response = reqwest::Client::new()
-            .post(format!("http://127.0.0.1:{port}/messages"))
+            .post(format!("http://127.0.0.1:{port}/v1/messages"))
             .header("content-type", "application/json")
             .body(
                 json!({
@@ -1841,12 +1849,8 @@ mod tests {
 
     #[tokio::test]
     async fn runtime_requires_client_api_key_even_when_local_only() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listener should bind");
-        let port = listener
-            .local_addr()
-            .expect("local addr should resolve")
-            .port();
-        drop(listener);
+        let guard = RuntimeHttpTestGuard::new();
+        let port = guard.port;
 
         let config = GatewayConfig {
             port,

@@ -441,6 +441,10 @@ mod tests {
     fn test_response_cache_lru_eviction() {
         let mut config = CacheConfig::default();
         config.lru_cache_capacity = 2;
+        // 本用例只验证 LRU 淘汰，必须关掉第一层增量缓存：
+        // 否则 get() 会先命中 delta_cache（按 session 键），
+        // 把被 LRU 淘汰的条目又返回回来，测不到真正的淘汰行为。
+        config.summary_cache_enabled = false;
         let mut cache = ResponseCache::new(config, None);
 
         // 添加 3 个条目
