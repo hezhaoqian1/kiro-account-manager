@@ -401,6 +401,23 @@ fn setup_window_close_handler(app: &mut tauri::App) -> Result<(), Box<dyn std::e
 
 #[allow(clippy::too_many_lines)] // Tauri 框架要求在 main 中注册所有命令，无法拆分
 fn main() {
+    // 注入 bundle identifier（仅用于日志展示）。应用数据目录固定为
+    // `%APPDATA%\.kiro-account-manager`（点前缀旧约定，用户确认保持不变，不随 identifier 变化）。
+    let tauri_context = tauri::generate_context!();
+    core::paths::set_identifier(tauri_context.config().identifier.clone());
+
+    // 历史数据目录与应用数据目录相同（`.kiro-account-manager`），无需迁移。
+    // migrate_legacy_data() 现为 no-op，保留调用以维持启动流程不变。
+    match core::paths::migrate_legacy_data() {
+        Ok(true) => log::info!(
+            "应用数据已从 {} 迁移到 {}",
+            core::paths::LEGACY_DIR_NAME,
+            core::paths::identifier()
+        ),
+        Ok(false) => {}
+        Err(err) => log::error!("应用数据目录迁移失败，将保留读取旧路径: {err}"),
+    }
+
     tauri::Builder::default()
         .plugin(setup_log_plugin().build())
         .plugin(tauri_plugin_process::init())
@@ -627,6 +644,6 @@ fn main() {
             // 窗口显示命令
             show_main_window
         ])
-        .run(tauri::generate_context!())
+        .run(tauri_context)
         .expect("error while running tauri application");
 }

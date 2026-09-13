@@ -1403,10 +1403,7 @@ pub async fn proxy_handler(
 
     // 写入客户端请求到日志文件
     {
-        let log_dir = dirs::data_dir()
-            .unwrap_or_default()
-            .join(".kiro-account-manager")
-            .join("logs");
+        let log_dir = crate::core::paths::app_data_dir_or_default().join("logs");
         let _ = std::fs::create_dir_all(&log_dir);
         let body_end = safe_truncate(&raw_request_body, 50000);
         let entry = format!(
@@ -2567,10 +2564,7 @@ pub async fn proxy_handler(
         .await;
     }
     {
-        let log_dir = dirs::data_dir()
-            .unwrap_or_default()
-            .join(".kiro-account-manager")
-            .join("logs");
+        let log_dir = crate::core::paths::app_data_dir_or_default().join("logs");
         let _ = std::fs::create_dir_all(&log_dir);
         let response_body = serde_json::to_string(&response).unwrap_or_default();
         let body_end = safe_truncate(&response_body, 50000);
@@ -2635,10 +2629,7 @@ async fn call_generate_assistant_response<T: serde::Serialize + ?Sized>(
 
     // 追加最新请求到日志文件
     if let Ok(payload_json) = serde_json::to_string(upstream_payload) {
-        let log_dir = dirs::data_dir()
-            .unwrap_or_default()
-            .join(".kiro-account-manager")
-            .join("logs");
+        let log_dir = crate::core::paths::app_data_dir_or_default().join("logs");
         let _ = std::fs::create_dir_all(&log_dir);
         let body_end = safe_truncate(&payload_json, 50000);
         let entry = format!(
@@ -2692,10 +2683,7 @@ async fn call_generate_assistant_response<T: serde::Serialize + ?Sized>(
 
         // 追加错误响应到日志文件
         {
-            let log_dir = dirs::data_dir()
-                .unwrap_or_default()
-                .join(".kiro-account-manager")
-                .join("logs");
+            let log_dir = crate::core::paths::app_data_dir_or_default().join("logs");
             let body_end = safe_truncate(&body, 50000);
             let entry = format!(
                 "[{}] kind=kiro_response idx={} upstream=generateAssistantResponse status={} bytes={} truncated={} body={}\n",
@@ -4009,10 +3997,7 @@ function_call: None,
 
                                 // 写入每个 EventStream 事件到文件
                                 {
-                                    let log_dir = dirs::data_dir()
-                                        .unwrap_or_default()
-                                        .join(".kiro-account-manager")
-                                        .join("logs");
+                                    let log_dir = crate::core::paths::app_data_dir_or_default().join("logs");
                                     let _ = std::fs::create_dir_all(&log_dir);
                                     let entry = format!(
                                         "[{}] kind=kiro_event idx={} event={} bytes={} chars={} body={}\n",
@@ -4993,10 +4978,7 @@ function_call: None,
 
         // 写入客户端响应到日志文件
         {
-            let log_dir = dirs::data_dir()
-                .unwrap_or_default()
-                .join(".kiro-account-manager")
-                .join("logs");
+            let log_dir = crate::core::paths::app_data_dir_or_default().join("logs");
 
             // 构建完整的响应体（根据格式）
             let response_body = match format {
@@ -5287,10 +5269,7 @@ async fn send_event(
 ) -> bool {
     // 写入发给客户端的每个 SSE 事件到文件
     {
-        let log_dir = dirs::data_dir()
-            .unwrap_or_default()
-            .join(".kiro-account-manager")
-            .join("logs");
+        let log_dir = crate::core::paths::app_data_dir_or_default().join("logs");
         let body_end = safe_truncate(payload, 2000);
         let entry = if let Some(event_name) = event {
             format!(

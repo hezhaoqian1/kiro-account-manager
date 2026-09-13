@@ -585,13 +585,8 @@ impl AccountStore {
     }
 
     fn get_storage_path() -> PathBuf {
-        let data_dir = dirs::data_dir().unwrap_or_else(|| {
-            let home = std::env::var("USERPROFILE")
-                .or_else(|_| std::env::var("HOME"))
-                .unwrap_or_else(|_| ".".to_string());
-            PathBuf::from(home)
-        });
-        data_dir.join(".kiro-account-manager").join("accounts.json")
+        // 统一走 paths 模块（应用数据目录固定为 Roaming/.kiro-account-manager）
+        crate::core::paths::app_data_dir_or_default().join("accounts.json")
     }
 
     fn backup_path_for(path: &PathBuf) -> PathBuf {
@@ -928,15 +923,8 @@ impl GroupTagStore {
     }
 
     fn get_storage_path() -> PathBuf {
-        let data_dir = dirs::data_dir().unwrap_or_else(|| {
-            let home = std::env::var("USERPROFILE")
-                .or_else(|_| std::env::var("HOME"))
-                .unwrap_or_else(|_| ".".to_string());
-            PathBuf::from(home)
-        });
-        data_dir
-            .join(".kiro-account-manager")
-            .join("groups-tags.json")
+        // 统一走 paths 模块（应用数据目录固定为 Roaming/.kiro-account-manager）
+        crate::core::paths::app_data_dir_or_default().join("groups-tags.json")
     }
 
     fn load_from_file(path: &PathBuf) -> GroupTagData {

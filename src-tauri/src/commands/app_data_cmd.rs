@@ -3,12 +3,12 @@ use tauri::AppHandle;
 /// 获取应用数据目录路径
 #[tauri::command]
 pub fn get_app_data_dir(_app: AppHandle) -> Result<String, String> {
+    // 统一由 core::paths 提供。应用数据目录固定为点前缀旧约定，不随 bundle identifier 变化：
     // Windows: C:\Users\{username}\AppData\Roaming\.kiro-account-manager
     // macOS: ~/Library/Application Support/.kiro-account-manager
     // Linux: ~/.local/share/.kiro-account-manager
-    let app_data_dir = dirs::data_dir()
-        .ok_or_else(|| "Failed to get data directory".to_string())?
-        .join(".kiro-account-manager");
+    let app_data_dir = crate::core::paths::app_data_dir()
+        .ok_or_else(|| "Failed to get data directory".to_string())?;
 
     Ok(app_data_dir.to_string_lossy().to_string())
 }
@@ -16,12 +16,9 @@ pub fn get_app_data_dir(_app: AppHandle) -> Result<String, String> {
 /// 使用系统文件管理器打开应用数据目录
 #[tauri::command]
 pub fn open_app_data_dir(_app: AppHandle) -> Result<(), String> {
-    // Windows: C:\Users\{username}\AppData\Roaming\.kiro-account-manager
-    // macOS: ~/Library/Application Support/.kiro-account-manager
-    // Linux: ~/.local/share/.kiro-account-manager
-    let app_data_dir = dirs::data_dir()
-        .ok_or_else(|| "Failed to get data directory".to_string())?
-        .join(".kiro-account-manager");
+    // 同上：统一走 core::paths
+    let app_data_dir = crate::core::paths::app_data_dir()
+        .ok_or_else(|| "Failed to get data directory".to_string())?;
 
     // 确保目录存在
     if !app_data_dir.exists() {

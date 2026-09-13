@@ -1,4 +1,4 @@
-// 应用自身设置命令 (存到 ~/.kiro-account-manager/app-settings.json)
+// 应用自身设置命令 (存到 app_data_dir/app-settings.json，见 core::paths)
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -127,14 +127,8 @@ impl AppSettings {
 }
 
 fn get_data_dir() -> PathBuf {
-    dirs::data_dir()
-        .unwrap_or_else(|| {
-            let home = std::env::var("USERPROFILE")
-                .or_else(|_| std::env::var("HOME"))
-                .unwrap_or_else(|_| ".".to_string());
-            PathBuf::from(home)
-        })
-        .join(".kiro-account-manager")
+    // 统一走 core::paths，系统目录不可用时回落到主目录
+    crate::core::paths::app_data_dir_or_default()
 }
 
 fn get_app_settings_path() -> PathBuf {

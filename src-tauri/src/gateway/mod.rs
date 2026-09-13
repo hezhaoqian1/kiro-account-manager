@@ -376,7 +376,11 @@ enum ResponseFormat {
     OpenAI,
 }
 
-const CONFIG_DIR: &str = ".kiro-account-manager";
+/// 应用数据目录（= Roaming/.kiro-account-manager）。
+/// 详见 `core::paths`。
+fn config_dir() -> PathBuf {
+    crate::core::paths::app_data_dir_or_default()
+}
 const CONFIG_FILE: &str = "gateway-config.json";
 const LOGS_DIR: &str = "logs";
 const REQUEST_LOG_FILE: &str = "gateway-request-log.jsonl";
@@ -673,14 +677,8 @@ fn clear_gateway_request_logs_at_path(path: &Path) -> Result<(), String> {
 }
 
 fn gateway_data_dir() -> PathBuf {
-    dirs::data_dir()
-        .unwrap_or_else(|| {
-            let home = std::env::var("USERPROFILE")
-                .or_else(|_| std::env::var("HOME"))
-                .unwrap_or_else(|_| ".".to_string());
-            PathBuf::from(home)
-        })
-        .join(CONFIG_DIR)
+    // 统一走 paths 模块
+    config_dir()
 }
 
 fn ensure_gateway_data_dir() -> Result<PathBuf, String> {
@@ -1091,7 +1089,7 @@ async fn spawn_runtime(config: GatewayConfig) -> Result<GatewayRuntime, String> 
         summary_cache_max_age_seconds: config.response_cache_ttl,
         ..response_cache::CacheConfig::default()
     };
-    let cache_dir = dirs::data_dir().map(|p| p.join(".kiro-account-manager").join("cache"));
+    let cache_dir = crate::core::paths::app_data_dir().map(|p| p.join("cache"));
     let response_cache = Arc::new(AsyncMutex::new(response_cache::ResponseCache::new(
         cache_config,
         cache_dir,

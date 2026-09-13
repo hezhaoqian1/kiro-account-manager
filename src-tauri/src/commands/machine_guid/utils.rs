@@ -15,10 +15,7 @@ static HEX32_REGEX: LazyLock<Regex> =
 #[cfg(target_os = "macos")]
 #[allow(dead_code)]
 pub fn get_macos_override_path() -> std::path::PathBuf {
-    dirs::data_dir()
-        .unwrap_or_default()
-        .join(".kiro-account-manager")
-        .join("machine-id-override")
+    crate::core::paths::app_data_dir_or_default().join("machine-id-override")
 }
 
 pub fn generate_random_machine_id() -> String {
