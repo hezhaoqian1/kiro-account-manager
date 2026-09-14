@@ -8,6 +8,9 @@ use std::path::PathBuf;
 pub struct AppSettings {
     pub theme: Option<String>,
     pub locale: Option<String>, // 界面语言
+    pub density: Option<String>, // 列表密度：compact / comfortable / spacious
+    pub ui_scale: Option<i32>, // 界面缩放百分比：90 / 100 / 110 / 125
+    pub reduce_motion: Option<bool>, // 减少动效：关闭过渡与动画
     pub lock_model: Option<bool>,
     pub locked_model: Option<String>,
     pub auto_refresh: Option<bool>,
@@ -19,6 +22,7 @@ pub struct AppSettings {
     pub auto_switch_enabled: Option<bool>,
     pub auto_switch_threshold: Option<f64>,
     pub auto_switch_interval: Option<i32>,
+    pub switch_target: Option<String>, // 切换账号时的目标：ide / cli / both
     // Kiro IDE 开关设置（用户偏好）
     pub enable_codebase_indexing: Option<bool>,
     pub enable_tab_autocomplete: Option<bool>,
@@ -29,13 +33,33 @@ pub struct AppSettings {
     pub notify_success: Option<bool>,
     pub notify_billing: Option<bool>,
     // 新增 Kiro IDE 设置
-    pub trusted_tools: Option<Vec<String>>,
     pub reference_tracker: Option<bool>,
     pub configure_mcp: Option<String>,
     pub telemetry_content_collection: Option<bool>,
     pub telemetry_usage_analytics: Option<bool>,
     pub telemetry_edit_stats: Option<bool>,
     pub telemetry_feedback: Option<bool>,
+    pub telemetry_prompt_logging: Option<bool>,
+    pub telemetry_edit_stats_details: Option<bool>,
+    pub telemetry_edit_stats_decorations: Option<bool>,
+    pub telemetry_edit_stats_status_bar: Option<bool>,
+    // Kiro IDE 设置镜像（与 settings.json 双向同步：IDE 优先，app 侧改动同时写两个文件）
+    pub agent_autonomy: Option<String>,
+    pub tool_card_display_mode: Option<String>,
+    pub terminal_command_timeout: Option<i64>,
+    pub agent_ignore_files: Option<Vec<String>>,
+    pub artifacts_auto_open_panel: Option<bool>,
+    pub trust_default_pattern: Option<String>,
+    pub trust_default_scope: Option<String>,
+    pub mcp_approved_env_vars: Option<Vec<String>>,
+    pub auto_approve_agent_commands: Option<Vec<String>>,
+    pub experiments_cloud_config: Option<bool>,
+    pub experiments_workspace_manager: Option<bool>,
+    pub editor_actions_prompts: Option<serde_json::Value>,
+    pub startup_mode: Option<String>,
+    // 同在 settings.json 里、app 也读写的两个键（模型选择 / IDE 代理），同样双向同步
+    pub model_selection: Option<String>,
+    pub http_proxy: Option<String>,
     // Kiro IDE 自定义安装路径
     pub custom_kiro_path: Option<String>,
     // 关闭窗口时的行为
@@ -52,6 +76,9 @@ impl Default for AppSettings {
         Self {
             theme: Some("dark".to_string()),
             locale: Some("zh-CN".to_string()),
+            density: Some("comfortable".to_string()),
+            ui_scale: Some(100),
+            reduce_motion: Some(false),
             lock_model: Some(false),
             locked_model: None,
             auto_refresh: Some(true),
@@ -62,22 +89,43 @@ impl Default for AppSettings {
             auto_switch_enabled: Some(false),
             auto_switch_threshold: Some(1.0),
             auto_switch_interval: Some(5),
-            // Kiro IDE 开关默认值
-            enable_codebase_indexing: Some(true),
-            enable_tab_autocomplete: Some(true),
+            switch_target: Some("ide".to_string()),
+            // Kiro IDE 开关默认值（对齐 Kiro 1.0 configuration 声明：
+            // enableCodebaseIndexing / enableTabAutocomplete / notify.failure / notify.success 默认 false）
+            enable_codebase_indexing: Some(false),
+            enable_tab_autocomplete: Some(false),
             usage_summary: Some(true),
             enable_debug_logs: Some(false),
             notify_action_required: Some(true),
-            notify_failure: Some(true),
-            notify_success: Some(true),
+            notify_failure: Some(false),
+            notify_success: Some(false),
             notify_billing: Some(true),
-            trusted_tools: None,
             reference_tracker: Some(false),
             configure_mcp: Some("Enabled".to_string()),
             telemetry_content_collection: Some(false),
             telemetry_usage_analytics: Some(false),
             telemetry_edit_stats: Some(false),
             telemetry_feedback: Some(false),
+            telemetry_prompt_logging: Some(false),
+            telemetry_edit_stats_details: Some(false),
+            telemetry_edit_stats_decorations: Some(false),
+            telemetry_edit_stats_status_bar: Some(false),
+            // 镜像字段默认值对齐 Kiro 1.0 configuration 声明
+            agent_autonomy: Some("Autopilot".to_string()),
+            tool_card_display_mode: Some("collapseOnComplete".to_string()),
+            terminal_command_timeout: None,
+            agent_ignore_files: None,
+            artifacts_auto_open_panel: Some(true),
+            trust_default_pattern: Some("base".to_string()),
+            trust_default_scope: Some("workspace".to_string()),
+            mcp_approved_env_vars: None,
+            auto_approve_agent_commands: None,
+            experiments_cloud_config: Some(false),
+            experiments_workspace_manager: Some(false),
+            editor_actions_prompts: None,
+            startup_mode: Some("code".to_string()),
+            model_selection: None,
+            http_proxy: None,
             custom_kiro_path: None,
             close_to_tray: Some(false), // 默认直接退出，由用户主动开启最小化到托盘
             app_proxy_mode: Some("followKiro".to_string()),
@@ -96,6 +144,9 @@ impl AppSettings {
 
         apply_if_some!(theme);
         apply_if_some!(locale);
+        apply_if_some!(density);
+        apply_if_some!(ui_scale);
+        apply_if_some!(reduce_motion);
         apply_if_some!(lock_model);
         apply_if_some!(locked_model);
         apply_if_some!(auto_refresh);
@@ -105,6 +156,7 @@ impl AppSettings {
         apply_if_some!(auto_switch_enabled);
         apply_if_some!(auto_switch_threshold);
         apply_if_some!(auto_switch_interval);
+        apply_if_some!(switch_target);
         apply_if_some!(enable_codebase_indexing);
         apply_if_some!(enable_tab_autocomplete);
         apply_if_some!(usage_summary);
@@ -113,13 +165,31 @@ impl AppSettings {
         apply_if_some!(notify_failure);
         apply_if_some!(notify_success);
         apply_if_some!(notify_billing);
-        apply_if_some!(trusted_tools);
         apply_if_some!(reference_tracker);
         apply_if_some!(configure_mcp);
         apply_if_some!(telemetry_content_collection);
         apply_if_some!(telemetry_usage_analytics);
         apply_if_some!(telemetry_edit_stats);
         apply_if_some!(telemetry_feedback);
+        apply_if_some!(telemetry_prompt_logging);
+        apply_if_some!(telemetry_edit_stats_details);
+        apply_if_some!(telemetry_edit_stats_decorations);
+        apply_if_some!(telemetry_edit_stats_status_bar);
+        apply_if_some!(agent_autonomy);
+        apply_if_some!(tool_card_display_mode);
+        apply_if_some!(terminal_command_timeout);
+        apply_if_some!(agent_ignore_files);
+        apply_if_some!(artifacts_auto_open_panel);
+        apply_if_some!(trust_default_pattern);
+        apply_if_some!(trust_default_scope);
+        apply_if_some!(mcp_approved_env_vars);
+        apply_if_some!(auto_approve_agent_commands);
+        apply_if_some!(experiments_cloud_config);
+        apply_if_some!(experiments_workspace_manager);
+        apply_if_some!(editor_actions_prompts);
+        apply_if_some!(startup_mode);
+        apply_if_some!(model_selection);
+        apply_if_some!(http_proxy);
         apply_if_some!(custom_kiro_path);
         apply_if_some!(close_to_tray);
         apply_if_some!(app_proxy_mode);

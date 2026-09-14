@@ -160,7 +160,7 @@ const AccountCard = memo(function AccountCard({
           }`}>{statusMeta.label}</span>
       </div>
 
-      <div className="p-3 pt-8 flex-1 flex flex-col gap-2">
+      <div className="pt-8 px-[var(--density-card-pad)] pb-[var(--density-card-pad)] flex-1 flex flex-col gap-[var(--density-card-gap)]">
         <div className="flex items-start gap-2.5">
           <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold border flex-shrink-0 ${account.provider === 'Google' ? "border-red-500/30 text-red-500" :
             isGitHubProvider(account.provider) ? "border-slate-500/30 text-slate-500" :

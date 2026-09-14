@@ -1,23 +1,42 @@
 import { useState, useEffect, useCallback } from 'react'
-import { getKiroSettings, getAppSettings, getCustomKiroPath, checkIdeInstallation, getAppDataDir, setKiroProxy, setKiroModel, setCustomKiroPath, clearCustomKiroPath, setKiroTrustedCommands, detectInstalledBrowsers, detectSystemProxy, openAppDataDir } from '../../../api/settingsApi'
-import { getSystemMachineGuid, resetSystemMachineGuid } from '../../../api/kiroApi'
+import { getKiroSettings, getAppSettings, getCustomKiroPath, checkIdeInstallation, getAppDataDir, setKiroProxy, setKiroModel, setCustomKiroPath, clearCustomKiroPath, detectInstalledBrowsers, detectSystemProxy, openAppDataDir, openKiroSettingsFile, setKiroNotification, setKiroTelemetry } from '../../../api/settingsApi'
+import { getSystemMachineGuid, resetSystemMachineGuid, restartAsAdmin } from '../../../api/kiroApi'
 import { emit } from '@tauri-apps/api/event'
-import { Palette, Settings as SettingsIcon, LayoutDashboard, Cpu, Bell } from 'lucide-react'
+import { Palette, Settings as SettingsIcon, LayoutDashboard, Cpu, FileJson } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs'
+import { Button } from '../../ui/button'
 import { useApp } from '../../../hooks/useApp'
 import { useDialog } from '../../../contexts/DialogContext'
 import { useAppSettings } from '../../../contexts/AppSettingsContext'
 import { usePrivacy } from '../../../contexts/PrivacyContext'
 import { persistAppSettings, runKiroCommandWithAppSettings, makeAppBoolToggle, makeKiroBoolToggle } from './settingsActions'
 import { isValidBrowserPath, isValidProxy } from './settingsValidators'
+import {
+  DEFAULT_NOTIFICATIONS,
+  DEFAULT_TELEMETRY,
+  NOTIFICATION_SETTINGS_FIELD_MAP,
+  type NotificationState,
+  type TelemetryState,
+} from './settingsConstants'
 import SettingsAppearance from './SettingsAppearance'
 import SettingsGeneral from './SettingsGeneral'
 import SettingsKiro from './SettingsKiro'
-import SettingsNotifications from './SettingsNotifications'
 
 function Settings() {
-    const { t, theme, setTheme } = useApp()
+    const { t, theme, setTheme, settings, updateSettings } = useApp()
     const { showConfirm, showError, showSuccess } = useDialog()
+    const density = settings?.density || 'comfortable'
+    const handleDensityChange = (value: string) => {
+        updateSettings({ density: value })
+    }
+    const uiScale = settings?.uiScale || 100
+    const handleUiScaleChange = (value: number) => {
+        updateSettings({ uiScale: value })
+    }
+    const reduceMotion = !!settings?.reduceMotion
+    const handleReduceMotionChange = (value: boolean) => {
+        updateSettings({ reduceMotion: value })
+    }
     const { updateSettings: updateAppSettings } = useAppSettings()
     const { privacyMode, setPrivacyMode } = usePrivacy()
     const [activeTab, setActiveTab] = useState('general')
@@ -38,20 +57,21 @@ function Settings() {
     const [showBrowserList, setShowBrowserList] = useState(false)
     const [customKiroPath, setCustomKiroPath] = useState<string | null>(null)
     const [detectingProxy, setDetectingProxy] = useState(false)
-    const [enableCodebaseIndexing, setEnableCodebaseIndexing] = useState(true)
-    const [trustedCommandsMode, setTrustedCommandsMode] = useState('none') // 'none' | 'common' | 'all'
-    const [customTrustedCommands, setCustomTrustedCommands] = useState('') // 自定义命令列表
+    const [enableCodebaseIndexing, setEnableCodebaseIndexing] = useState(false) // 对齐 Kiro 1.0 默认（实验特性，默认关）
 
     // Agent 设置
-    const [agentAutonomy, setAgentAutonomy] = useState('Supervised') // 'Autopilot' | 'Supervised'
-    const [enableTabAutocomplete, setEnableTabAutocomplete] = useState(true)
+    const [agentAutonomy, setAgentAutonomy] = useState('Autopilot') // 'Autopilot' | 'Supervised'（对齐 Kiro 1.0 默认）
+    const [enableTabAutocomplete, setEnableTabAutocomplete] = useState(false) // 对齐 Kiro 1.0 默认
     const [usageSummary, setUsageSummary] = useState(true)
     const [enableDebugLogs, setEnableDebugLogs] = useState(false)
 
     // 新增 Kiro IDE 设置
-    const [trustedTools, setTrustedTools] = useState('')
     const [referenceTracker, setReferenceTracker] = useState(false)
     const [configureMcp, setConfigureMcp] = useState('Enabled')
+
+    // 通知 / 遥测（同样是 Kiro IDE settings.json 里的键，原独立「通知」tab）
+    const [notifications, setNotifications] = useState<NotificationState>(DEFAULT_NOTIFICATIONS)
+    const [telemetry, setTelemetry] = useState<TelemetryState>(DEFAULT_TELEMETRY)
 
     // 自动换号设置
     const [autoSwitchEnabled, setAutoSwitchEnabled] = useState(false)
@@ -95,18 +115,33 @@ function Settings() {
                 setHttpProxy(proxy)
                 setOriginalProxy(proxy)
                 setAiModel(kiroSettings.modelSelection || 'claude-sonnet-4.5')
-                setEnableCodebaseIndexing(kiroSettings.enableCodebaseIndexing ?? true)
-                setTrustedCommandsMode(kiroSettings.trustedCommandsMode || 'none')
-                setCustomTrustedCommands(kiroSettings.customTrustedCommands || '')
-                // Agent 设置
-                setAgentAutonomy(kiroSettings.agentAutonomy || 'Supervised')
-                setEnableTabAutocomplete(kiroSettings.enableTabAutocomplete ?? true)
+                setEnableCodebaseIndexing(kiroSettings.enableCodebaseIndexing ?? false)
+                // Agent 设置（默认值对齐 Kiro 1.0）
+                setAgentAutonomy(kiroSettings.agentAutonomy || 'Autopilot')
+                setEnableTabAutocomplete(kiroSettings.enableTabAutocomplete ?? false)
                 setUsageSummary(kiroSettings.usageSummary ?? true)
                 setEnableDebugLogs(kiroSettings.enableDebugLogs ?? false)
                 // 新增设置
-                setTrustedTools((kiroSettings.trustedTools || []).join(', '))
                 setReferenceTracker(kiroSettings.referenceTracker ?? false)
                 setConfigureMcp(kiroSettings.configureMcp || 'Enabled')
+                // 通知（默认值对齐 Kiro 1.0：failure / success 默认 false）
+                setNotifications({
+                    notifyActionRequired: kiroSettings.notifyActionRequired ?? true,
+                    notifyFailure: kiroSettings.notifyFailure ?? false,
+                    notifySuccess: kiroSettings.notifySuccess ?? false,
+                    notifyBilling: kiroSettings.notifyBilling ?? true,
+                })
+                // 遥测
+                setTelemetry({
+                    telemetryContentCollection: kiroSettings.telemetryContentCollection ?? false,
+                    telemetryUsageAnalytics: kiroSettings.telemetryUsageAnalytics ?? false,
+                    telemetryEditStats: kiroSettings.telemetryEditStats ?? false,
+                    telemetryFeedback: kiroSettings.telemetryFeedback ?? false,
+                    telemetryPromptLogging: kiroSettings.telemetryPromptLogging ?? false,
+                    telemetryEditStatsDetails: kiroSettings.telemetryEditStatsDetails ?? false,
+                    telemetryEditStatsDecorations: kiroSettings.telemetryEditStatsDecorations ?? false,
+                    telemetryEditStatsStatusBar: kiroSettings.telemetryEditStatsStatusBar ?? false,
+                })
             }
             // 从应用设置读取
             if (appSettings) {
@@ -219,6 +254,10 @@ function Settings() {
     }
 
     const handleCloseToTrayChange = makeAppBoolToggle(setCloseToTray, 'closeToTray', saveAppSettings)
+    const switchTarget = settings?.switchTarget || 'ide'
+    const handleSwitchTargetChange = (value: string) => {
+        updateSettings({ switchTarget: value })
+    }
 
     const handleBrowseKiroPath = async () => {
         try {
@@ -254,35 +293,6 @@ function Settings() {
 
     const handleCodebaseIndexingChange = makeKiroBoolToggle(setEnableCodebaseIndexing, runKiroCommand, 'set_kiro_codebase_indexing', 'enableCodebaseIndexing')
 
-    const handleTrustedCommandsModeChange = async (mode: string) => {
-        if (!mode) return
-        if (mode === 'all') {
-            const confirmed = await showConfirm(
-                t('settings.trustedCommandsAllConfirmTitle'),
-                t('settings.trustedCommandsAllConfirmMessage'),
-                { confirmText: t('settings.trustedCommandsAllConfirmAction'), cancelText: t('common.cancel') }
-            )
-            if (!confirmed) return
-        }
-        setTrustedCommandsMode(mode)
-        try {
-            await setKiroTrustedCommands(mode, customTrustedCommands)
-        } catch (err: any) {
-            await showError(t('settings.saveFailed'), t('settings.saveFailed') + ': ' + err)
-        }
-    }
-
-    const handleCustomTrustedCommandsChange = async (commands: string) => {
-        setCustomTrustedCommands(commands)
-        if (trustedCommandsMode === 'common') {
-            try {
-                await setKiroTrustedCommands('common', commands)
-            } catch (err: any) {
-                await showError(t('settings.saveFailed'), t('settings.saveFailed') + ': ' + err)
-            }
-        }
-    }
-
     const handleAgentAutonomyChange = async (mode: string) => {
         setAgentAutonomy(mode)
         await runKiroCommand('set_kiro_agent_autonomy', { autonomy: mode })
@@ -294,17 +304,36 @@ function Settings() {
 
     const handleDebugLogsChange = makeKiroBoolToggle(setEnableDebugLogs, runKiroCommand, 'set_kiro_debug_logs', 'enableDebugLogs')
 
-    const handleTrustedToolsSave = async (value: string) => {
-        setTrustedTools(value)
-        const tools = value.split(',').map(s => s.trim()).filter(Boolean)
-        await runKiroCommand('set_kiro_trusted_tools', { tools }, { trustedTools: tools })
-    }
-
     const handleReferenceTrackerChange = makeKiroBoolToggle(setReferenceTracker, runKiroCommand, 'set_kiro_reference_tracker', 'referenceTracker')
 
     const handleConfigureMcpChange = async (mode: string) => {
         setConfigureMcp(mode)
         await runKiroCommand('set_kiro_configure_mcp', { mode }, { configureMcp: mode })
+    }
+
+    // 通知开关：写 Kiro IDE settings.json，并按字段映射同步 app-settings.json
+    const handleNotificationChange = async (key: string, checked: boolean, field: keyof NotificationState) => {
+        setNotifications(prev => ({ ...prev, [field]: checked }))
+        try {
+            await setKiroNotification(key, checked)
+            const appField = (NOTIFICATION_SETTINGS_FIELD_MAP as any)[key]
+            if (appField) {
+                await updateAppSettings({ [appField]: checked })
+            }
+        } catch (err: any) {
+            await showError(t('settings.saveFailed'), `${t('settings.saveFailed')}: ${err}`)
+        }
+    }
+
+    // 遥测开关：写 Kiro IDE settings.json，并同步 app-settings.json（字段名同名）
+    const handleTelemetryChange = async (ideKey: string, checked: boolean, field: keyof TelemetryState) => {
+        setTelemetry(prev => ({ ...prev, [field]: checked }))
+        try {
+            await setKiroTelemetry(ideKey, checked)
+            await updateAppSettings({ [field]: checked })
+        } catch (err: any) {
+            await showError(t('settings.saveFailed'), `${t('settings.saveFailed')}: ${err}`)
+        }
     }
 
     const handleApplyBrowser = async () => {
@@ -371,9 +400,36 @@ function Settings() {
         }
     }
 
+    // 以管理员身份重启：提权实例会沿用当前数据目录（后端 --data-dir= 传递），
+    // 因此即便 UAC 用的是其他管理员账号，也不会读不到账号数据。
+    const handleRestartAsAdmin = async () => {
+        const confirmed = await showConfirm(
+            `⚠️ ${t('settings.restartAsAdmin')}`,
+            t('settings.confirmRestartAsAdmin'),
+            { confirmText: t('settings.restartAsAdmin'), cancelText: t('common.cancel') }
+        )
+        if (!confirmed) return
+
+        try {
+            await restartAsAdmin()
+            // 提权进程确认启动后，后端会退出当前进程
+        } catch (err: any) {
+            await showError(t('settings.restartAsAdminFailed'), err.toString())
+        }
+    }
+
     const handleOpenAppDataDir = async () => {
         try {
             await openAppDataDir()
+        } catch (err: any) {
+            await showError(t('settings.openFailed'), err.toString())
+        }
+    }
+
+    // 用系统默认程序打开 Kiro IDE 的 settings.json（原始配置文件）
+    const handleOpenKiroSettingsFile = async () => {
+        try {
+            await openKiroSettingsFile()
         } catch (err: any) {
             await showError(t('settings.openFailed'), err.toString())
         }
@@ -407,10 +463,6 @@ function Settings() {
                             <Cpu size={14} />
                             {t('settings.kiro')}
                         </TabsTrigger>
-                        <TabsTrigger value="notifications" className="gap-1.5 px-3 h-9 shrink-0 text-sm font-medium data-[state=active]:shadow-sm">
-                            <Bell size={14} />
-                            {t('settings.notifications')}
-                        </TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="general">
@@ -436,6 +488,7 @@ function Settings() {
                             systemMachineInfo={systemMachineInfo}
                             machineGuidAction={machineGuidAction}
                             handleResetSystemMachineGuid={handleResetSystemMachineGuid}
+                            handleRestartAsAdmin={handleRestartAsAdmin}
                             handleDetectBrowsers={handleDetectBrowsers}
                             handleApplyBrowser={handleApplyBrowser}
                             handleAutoRefreshChange={handleAutoRefreshChange}
@@ -443,6 +496,8 @@ function Settings() {
                             handleAutoSwitchEnabledChange={handleAutoSwitchEnabledChange}
                             handleAutoSwitchThresholdChange={handleAutoSwitchThresholdChange}
                             handleAutoSwitchIntervalChange={handleAutoSwitchIntervalChange}
+                            switchTarget={switchTarget}
+                            handleSwitchTargetChange={handleSwitchTargetChange}
                             handleCloseToTrayChange={handleCloseToTrayChange}
                             appDataDir={appDataDir}
                             handleOpenAppDataDir={handleOpenAppDataDir}
@@ -454,19 +509,29 @@ function Settings() {
                         <SettingsAppearance
                             theme={theme}
                             setTheme={setTheme}
+                            density={density}
+                            setDensity={handleDensityChange}
+                            uiScale={uiScale}
+                            setUiScale={handleUiScaleChange}
+                            reduceMotion={reduceMotion}
+                            setReduceMotion={handleReduceMotionChange}
                             t={t}
                         />
                     </TabsContent>
 
                     <TabsContent value="kiro">
+                        {/* 打开 Kiro IDE 原始 settings.json，便于直接编辑配置文件 */}
+                        <div className="mb-3 flex items-center justify-end">
+                            <Button variant="outline" size="sm" onClick={handleOpenKiroSettingsFile}>
+                                <FileJson size={14} /> {t('settings.openSettingsFile')}
+                            </Button>
+                        </div>
+                        {/* PermissionsPanel / KiroAgentAdvancedPanel 已并入 SettingsKiro，
+                            以便按命名空间统一排序（代理压尾） */}
                         <SettingsKiro
                             aiModel={aiModel}
                             lockModel={lockModel}
                             agentAutonomy={agentAutonomy}
-                            trustedCommandsMode={trustedCommandsMode}
-                            customTrustedCommands={customTrustedCommands}
-                            trustedTools={trustedTools}
-                            setTrustedTools={setTrustedTools}
                             configureMcp={configureMcp}
                             httpProxy={httpProxy}
                             setHttpProxy={setHttpProxy}
@@ -480,12 +545,11 @@ function Settings() {
                             usageSummary={usageSummary}
                             enableDebugLogs={enableDebugLogs}
                             referenceTracker={referenceTracker}
+                            notifications={notifications}
+                            telemetry={telemetry}
                             handleApplyModel={handleApplyModel}
                             handleLockModelChange={handleLockModelChange}
                             handleAgentAutonomyChange={handleAgentAutonomyChange}
-                            handleTrustedCommandsModeChange={handleTrustedCommandsModeChange}
-                            handleCustomTrustedCommandsChange={handleCustomTrustedCommandsChange}
-                            handleTrustedToolsSave={handleTrustedToolsSave}
                             handleConfigureMcpChange={handleConfigureMcpChange}
                             handleApplyProxy={handleApplyProxy}
                             handleDetectProxy={handleDetectProxy}
@@ -495,12 +559,10 @@ function Settings() {
                             handleUsageSummaryChange={handleUsageSummaryChange}
                             handleDebugLogsChange={handleDebugLogsChange}
                             handleReferenceTrackerChange={handleReferenceTrackerChange}
+                            handleNotificationChange={handleNotificationChange}
+                            handleTelemetryChange={handleTelemetryChange}
                             t={t}
                         />
-                    </TabsContent>
-
-                    <TabsContent value="notifications">
-                        <SettingsNotifications />
                     </TabsContent>
                 </Tabs>
             </div>

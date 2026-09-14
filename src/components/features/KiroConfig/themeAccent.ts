@@ -1,5 +1,21 @@
+/**
+ * 解析实际生效的主题名。
+ *
+ * next-themes 在 theme='system' 时会把 `<html data-theme>` 写成解析后的 'light' / 'dark'。
+ * 这里读回来，避免 'system' 落到 isLight=true 分支——否则系统切到暗色时，
+ * 组件仍会取到亮色 accent / surface 配色，出现浅底浅字的对比度问题。
+ */
+function resolveTheme(theme: string): string {
+  if (theme !== 'system') return theme;
+  // next-themes 已把解析后的主题写在 <html data-theme> 上
+  return document.documentElement.getAttribute('data-theme') || 'dark';
+}
+
 export function getThemeAccent(theme: string) {
-  const isLight = !['dark', 'dark-one', 'tech', 'midnight', 'forest'].includes(theme);
+  const effective = resolveTheme(theme);
+  // 暗色主题列表，须与 index.css 的暗色组（dark / dark-one / tech / midnight）保持一致。
+  // 注：forest 的 --background 是 #f0fdf4（亮绿），此前被误列入暗色组，导致取到暗色 accent。
+  const isLight = !['dark', 'dark-one', 'tech', 'midnight'].includes(effective);
   
   const accents: Record<string, any> = {
     light: {
@@ -60,7 +76,7 @@ export function getThemeAccent(theme: string) {
     }
   };
 
-  return accents[theme] || accents[isLight ? 'light' : 'dark'];
+  return accents[effective] || accents[isLight ? 'light' : 'dark'];
 }
 
 export function getSolidAccentButton(accent: any) {
@@ -72,7 +88,10 @@ export function getGradientAccentButton(accent: any) {
 }
 
 export function getThemeSurfaceStyles(theme: string) {
-  const isLight = !['dark', 'dark-one', 'tech', 'midnight', 'forest'].includes(theme);
+  const effective = resolveTheme(theme);
+  // 暗色主题列表，须与 index.css 的暗色组（dark / dark-one / tech / midnight）保持一致。
+  // 注：forest 的 --background 是 #f0fdf4（亮绿），此前被误列入暗色组，导致取到暗色 accent。
+  const isLight = !['dark', 'dark-one', 'tech', 'midnight'].includes(effective);
   return {
     editorBg: isLight ? '#ffffff' : '#1e1e1e',
     editorText: isLight ? '#000000' : '#d4d4d4',

@@ -21,14 +21,20 @@ export interface AppSettings {
   notifyFailure: boolean;
   notifySuccess: boolean;
   notifyBilling: boolean;
-  trustedTools: string[];
   referenceTracker: boolean;
   configureMcp: 'Enabled' | 'Disabled' | string;
   telemetryContentCollection: boolean;
   telemetryUsageAnalytics: boolean;
   telemetryEditStats: boolean;
   telemetryFeedback: boolean;
+  telemetryPromptLogging: boolean;
+  telemetryEditStatsDetails: boolean;
+  telemetryEditStatsDecorations: boolean;
+  telemetryEditStatsStatusBar: boolean;
   appProxyMode: 'followKiro' | 'disabled' | string;
+  density: 'compact' | 'comfortable' | 'spacious' | string;
+  uiScale: number;
+  reduceMotion: boolean;
 }
 
 interface AppSettingsContextValue {
@@ -52,22 +58,29 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoSwitchThreshold: 1,
   autoSwitchInterval: 5,
   switchTarget: 'ide',
-  enableCodebaseIndexing: true,
-  enableTabAutocomplete: true,
+  // 默认值对齐 Kiro 1.0：enableCodebaseIndexing / enableTabAutocomplete / notify.failure / notify.success 默认 false
+  enableCodebaseIndexing: false,
+  enableTabAutocomplete: false,
   usageSummary: true,
   enableDebugLogs: false,
   notifyActionRequired: true,
-  notifyFailure: true,
-  notifySuccess: true,
+  notifyFailure: false,
+  notifySuccess: false,
   notifyBilling: true,
-  trustedTools: [],
   referenceTracker: false,
   configureMcp: 'Enabled',
   telemetryContentCollection: false,
   telemetryUsageAnalytics: false,
   telemetryEditStats: false,
   telemetryFeedback: false,
-  appProxyMode: 'followKiro'
+  telemetryPromptLogging: false,
+  telemetryEditStatsDetails: false,
+  telemetryEditStatsDecorations: false,
+  telemetryEditStatsStatusBar: false,
+  appProxyMode: 'followKiro',
+  density: 'comfortable',
+  uiScale: 100,
+  reduceMotion: false
 }
 
 export function AppSettingsProvider({ children }: { children: ReactNode }) {
@@ -124,6 +137,14 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
       if (unlisten) unlisten()
     }
   }, [])
+
+  // 外观：写到 <html> 上，由 CSS 驱动（密度 / 缩放 / 动效）
+  useEffect(() => {
+    const root = document.documentElement
+    root.dataset.density = settings?.density || 'comfortable'
+    root.style.setProperty('--ui-scale', String((settings?.uiScale || 100) / 100))
+    root.dataset.reduceMotion = settings?.reduceMotion ? 'true' : 'false'
+  }, [settings?.density, settings?.uiScale, settings?.reduceMotion])
 
   return (
     <AppSettingsContext.Provider value={{ settings, loading, updateSettings, reload: loadSettings }}>

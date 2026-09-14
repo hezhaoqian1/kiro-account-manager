@@ -268,3 +268,55 @@
 .animate-bounce-in { animation: bounceIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
 .animate-scale-in { animation: scaleIn 0.4s ease-out forwards; }
 .stat-number { font-feature-settings: "tnum"; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+
+/* ===== 列表密度（由 <html data-density> 驱动）=====
+   comfortable 为默认档，数值与改动前的 p-3 / gap-2 / gap-3 / pb-4 完全一致 */
+:root,
+:root[data-density="comfortable"] {
+  --density-card-pad: 0.75rem;
+  --density-card-gap: 0.5rem;
+  --density-grid-gap: 0.75rem;
+  --density-row-gap: 1rem;
+}
+
+:root[data-density="compact"] {
+  --density-card-pad: 0.5rem;
+  --density-card-gap: 0.25rem;
+  --density-grid-gap: 0.5rem;
+  --density-row-gap: 0.5rem;
+}
+
+:root[data-density="spacious"] {
+  --density-card-pad: 1rem;
+  --density-card-gap: 0.75rem;
+  --density-grid-gap: 1rem;
+  --density-row-gap: 1.5rem;
+}
+
+/* ===== 界面缩放 =====
+   Tailwind 的间距与字号均为 rem 基准，缩放根字号即可整体等比放大缩小。
+   --ui-scale 由 AppSettingsContext 写到 <html> 的 style 上（1 = 100%）。
+   注意：写在此处（无 layer）优先级高于 @layer base，确保生效。 */
+html {
+  font-size: calc(16px * var(--ui-scale, 1));
+}
+
+/* ===== 减少动效 =====
+   用户显式开启，或系统偏好 prefers-reduced-motion 时均生效 */
+:root[data-reduce-motion="true"] *,
+:root[data-reduce-motion="true"] *::before,
+:root[data-reduce-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

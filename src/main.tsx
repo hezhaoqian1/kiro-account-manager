@@ -39,7 +39,9 @@ ReactDOM.createRoot(rootElement).render(
       <ThemeProvider
         attribute="data-theme"
         defaultTheme="dark"
-        enableSystem={false}
+        // 开启系统跟随：theme='system' 时 next-themes 会按 prefers-color-scheme
+        // 把 data-theme 解析成 'light' 或 'dark'（见外观设置里的「跟随系统」选项）。
+        enableSystem
         disableTransitionOnChange
         themes={[
           'light', 'dark', 'dark-one', 'tech', 'midnight', 

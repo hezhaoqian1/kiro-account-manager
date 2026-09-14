@@ -1,4 +1,4 @@
-import { Clock, Globe, Search, Shield, Shuffle, AlertTriangle, Eye, EyeOff, Repeat, RefreshCw, Check, Copy, Cpu, X, FolderOpen, ExternalLink, Users, User, Languages } from 'lucide-react'
+import { Clock, Globe, Search, Shield, Shuffle, AlertTriangle, Eye, EyeOff, Repeat, RefreshCw, Check, Copy, Cpu, X, FolderOpen, ExternalLink, Users, User, Target, Minimize2, Languages } from 'lucide-react'
 import { Input } from '../../ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select'
 import React from 'react'
@@ -28,6 +28,7 @@ interface SettingsGeneralProps {
   autoSwitchEnabled: boolean;
   autoSwitchThreshold: number;
   autoSwitchInterval: number;
+  switchTarget: string;
   closeToTray: boolean;
   browserPath: string;
   setBrowserPath: (path: string) => void;
@@ -42,6 +43,7 @@ interface SettingsGeneralProps {
   systemMachineInfo: SystemMachineInfo | null;
   machineGuidAction: string | null;
   handleResetSystemMachineGuid: () => void;
+  handleRestartAsAdmin: () => void;
   appDataDir: string;
   handleOpenAppDataDir: () => void;
   handleDetectBrowsers: () => void;
@@ -51,6 +53,7 @@ interface SettingsGeneralProps {
   handleAutoSwitchEnabledChange: (checked: boolean) => void;
   handleAutoSwitchThresholdChange: (value: number) => void;
   handleAutoSwitchIntervalChange: (value: string) => void;
+  handleSwitchTargetChange: (value: string) => void;
   handleCloseToTrayChange: (checked: boolean) => void;
   t: TFunction;
 }
@@ -86,6 +89,7 @@ function SettingsGeneral({
   autoSwitchEnabled,
   autoSwitchThreshold,
   autoSwitchInterval,
+  switchTarget,
   closeToTray,
   browserPath,
   setBrowserPath,
@@ -100,6 +104,7 @@ function SettingsGeneral({
   systemMachineInfo,
   machineGuidAction,
   handleResetSystemMachineGuid,
+  handleRestartAsAdmin,
   appDataDir,
   handleOpenAppDataDir,
   handleDetectBrowsers,
@@ -109,6 +114,7 @@ function SettingsGeneral({
   handleAutoSwitchEnabledChange,
   handleAutoSwitchThresholdChange,
   handleAutoSwitchIntervalChange,
+  handleSwitchTargetChange,
   handleCloseToTrayChange,
   t,
 }: SettingsGeneralProps) {
@@ -225,14 +231,39 @@ function SettingsGeneral({
             </div>
           )}
 
-          {/* 关闭到托盘（合并进账号管理）*/}
-          <SwitchRow
-            checked={closeToTray}
-            onCheckedChange={handleCloseToTrayChange}
-            label={t('settings.minimizeToTray')}
-            hint={t('settings.minimizeToTrayHint')}
-          />
+          {/* 切换目标：手动切换/退出登录时作用到哪一侧（样式对齐 SwitchRow） */}
+          <div
+            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-card hover:bg-muted/40 transition-colors"
+            title={t('settings.switchTargetDesc')}
+          >
+            <span className="text-muted-foreground flex items-center"><Target size={14} /></span>
+            <span className="text-sm font-medium text-foreground">{t('settings.switchTarget')}</span>
+            <div className="ml-auto flex items-center gap-2">
+              <Select value={switchTarget || 'ide'} onValueChange={handleSwitchTargetChange}>
+                <SelectTrigger className="h-7 w-[150px] text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ide">{t('settings.switchTargetIde')}</SelectItem>
+                  <SelectItem value="cli">{t('settings.switchTargetCli')}</SelectItem>
+                  <SelectItem value="both">{t('settings.switchTargetBoth')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </div>
+      </SectionCard>
+
+      {/* 关闭行为：与账号无关，从「账号管理」拆出来独立成节 */}
+      <SectionCard
+        title={t('settings.closeBehavior')}
+        accent="amber"
+        icon={<Minimize2 size={14} className="text-amber-500" />}
+      >
+        <SwitchRow
+          checked={closeToTray}
+          onCheckedChange={handleCloseToTrayChange}
+          label={t('settings.minimizeToTray')}
+          hint={t('settings.minimizeToTrayHint')}
+        />
       </SectionCard>
 
       {/* 浏览器 + Kiro IDE 路径（双栏并列）*/}
@@ -408,6 +439,13 @@ function SettingsGeneral({
                 <li>{t('settings.adminWarning2')}</li>
                 <li>{t('settings.adminWarning3')}</li>
               </ul>
+              <button
+                onClick={handleRestartAsAdmin}
+                className="mt-2 ml-4 h-7 px-3 rounded-md inline-flex items-center gap-1.5 text-xs font-medium bg-orange-500 hover:bg-orange-600 text-white transition-colors cursor-pointer"
+              >
+                <Shield size={12} />
+                {t('settings.restartAsAdmin')}
+              </button>
             </details>
           )}
         </SectionCard>

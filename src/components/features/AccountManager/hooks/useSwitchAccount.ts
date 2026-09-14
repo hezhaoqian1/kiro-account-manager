@@ -56,8 +56,8 @@ export function useSwitchAccount(onLocalTokenChange) {
       title: t('switch.title'),
       message: `${t('switch.confirmSwitch')} ${account.email}？`,
       account,
-      switchTarget: 'ide'})
-  }, [t])
+      switchTarget: (appSettings as any)?.switchTarget || 'ide'})
+  }, [t, appSettings])
 
   // 显示退出登录确认弹窗（登录的逆操作：清除当前登录态，账号仍保留在列表中）
   const handleLogoutAccount = useCallback((account) => {
@@ -67,8 +67,8 @@ export function useSwitchAccount(onLocalTokenChange) {
       title: t('switch.logoutTitle'),
       message: `${t('switch.confirmLogout')} ${account.email}？`,
       account,
-      switchTarget: 'ide'})
-  }, [t])
+      switchTarget: (appSettings as any)?.switchTarget || 'ide'})
+  }, [t, appSettings])
 
   // 确认切换 / 退出登录（共用一个弹窗，靠 mode 区分）
   const confirmSwitch = useCallback(async () => {

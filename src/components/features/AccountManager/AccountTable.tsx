@@ -43,7 +43,7 @@ const VirtualRow = memo(function VirtualRow({
   t,
   onContextMenuOpen}: any) {
   return (
-    <div className="gap-3 pb-4" style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
+    <div className="gap-[var(--density-grid-gap)] pb-[var(--density-row-gap)]" style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
       {row.map((item: any) => {
         if (item._isAddButton) {
           return <AddButton key="add" onClick={onAdd} t={t} />
@@ -123,7 +123,7 @@ function AccountTable({
   groupDefinitions = [],
   accountRowStateById = {},
   onLoadAvailableModels}: any) {
-  const { t } = useApp()
+  const { t, settings } = useApp()
   const containerRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const [columns, setColumns] = useState(4)
@@ -187,10 +187,18 @@ function AccountTable({
     return result
   }, [accounts, columns])
 
+  // 列表密度会改变卡片内边距与行间距，行高估算必须跟着变；
+  // 实际高度再交给 measureElement 测量校正，避免估算偏差累积成滚动错位
+  const density = settings?.density || 'comfortable'
+  const uiScale = settings?.uiScale || 100
+  const rowHeight = Math.round(
+    (density === 'compact' ? 296 : density === 'spacious' ? 344 : 320) * (uiScale / 100)
+  )
+
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 320,
+    estimateSize: () => rowHeight,
     overscan: 1})
 
   // 将 selectedIds 转为 Set 提高查找性能
@@ -245,6 +253,7 @@ function AccountTable({
                 <div
                   key={virtualRow.key}
                   data-index={virtualRow.index}
+                  ref={rowVirtualizer.measureElement}
                 >
                   <VirtualRow
                     row={rows[virtualRow.index]}

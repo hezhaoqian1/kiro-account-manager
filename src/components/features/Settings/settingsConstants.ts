@@ -19,6 +19,7 @@ export const AI_MODELS = [
   { value: 'qwen3-coder-next', label: 'Qwen3 Coder Next (256K) - 0.05x', recommended: false },
 ]
 
+// Kiro IDE settings.json 通知键 -> app-settings.json 字段名
 export const NOTIFICATION_SETTINGS_FIELD_MAP = {
   'kiroAgent.notifications.agent.actionRequired': 'notifyActionRequired',
   'kiroAgent.notifications.agent.failure': 'notifyFailure',
@@ -26,7 +27,68 @@ export const NOTIFICATION_SETTINGS_FIELD_MAP = {
   'kiroAgent.notifications.billing': 'notifyBilling'
 }
 
+// ---- 通知 / 遥测开关（同属 Kiro IDE settings.json，已合并进 Kiro 设置页）----
+
+export interface NotificationState {
+  notifyActionRequired: boolean
+  notifyFailure: boolean
+  notifySuccess: boolean
+  notifyBilling: boolean
+}
+
+export interface TelemetryState {
+  telemetryContentCollection: boolean
+  telemetryUsageAnalytics: boolean
+  telemetryEditStats: boolean
+  telemetryFeedback: boolean
+  telemetryPromptLogging: boolean
+  telemetryEditStatsDetails: boolean
+  telemetryEditStatsDecorations: boolean
+  telemetryEditStatsStatusBar: boolean
+}
+
+// 默认值对齐 Kiro 1.0：notify.failure / notify.success 默认 false
+export const DEFAULT_NOTIFICATIONS: NotificationState = {
+  notifyActionRequired: true,
+  notifyFailure: false,
+  notifySuccess: false,
+  notifyBilling: true,
+}
+
+export const DEFAULT_TELEMETRY: TelemetryState = {
+  telemetryContentCollection: false,
+  telemetryUsageAnalytics: false,
+  telemetryEditStats: false,
+  telemetryFeedback: false,
+  telemetryPromptLogging: false,
+  telemetryEditStatsDetails: false,
+  telemetryEditStatsDecorations: false,
+  telemetryEditStatsStatusBar: false,
+}
+
+// key = Kiro IDE settings.json 中的通知键；field = 本地 state 字段
+export const NOTIFICATION_ROWS: { key: string; label: string; field: keyof NotificationState }[] = [
+  { key: 'kiroAgent.notifications.agent.actionRequired', label: 'settings.notifyActionRequired', field: 'notifyActionRequired' },
+  { key: 'kiroAgent.notifications.agent.failure', label: 'settings.notifyFailure', field: 'notifyFailure' },
+  { key: 'kiroAgent.notifications.agent.success', label: 'settings.notifySuccess', field: 'notifySuccess' },
+  { key: 'kiroAgent.notifications.billing', label: 'settings.notifyBilling', field: 'notifyBilling' },
+]
+
+// ideKey = Kiro IDE settings.json 中的遥测键；field = 本地 state 字段（与 app-settings 同名，可直接映射）
+export const TELEMETRY_ROWS: { ideKey: string; label: string; field: keyof TelemetryState }[] = [
+  { ideKey: 'telemetry.dataSharingAndPromptLogging.contentCollectionForServiceImprovement', label: 'settings.telemetryContentCollection', field: 'telemetryContentCollection' },
+  { ideKey: 'telemetry.dataSharingAndPromptLogging.usageAnalyticsAndPerformanceMetrics', label: 'settings.telemetryUsageAnalytics', field: 'telemetryUsageAnalytics' },
+  { ideKey: 'telemetry.editStats.enabled', label: 'settings.telemetryEditStats', field: 'telemetryEditStats' },
+  { ideKey: 'telemetry.feedback.enabled', label: 'settings.telemetryFeedback', field: 'telemetryFeedback' },
+  { ideKey: 'telemetry.dataSharingAndPromptLogging.promptLogging', label: 'settings.telemetryPromptLogging', field: 'telemetryPromptLogging' },
+  { ideKey: 'telemetry.editStats.details.enabled', label: 'settings.telemetryEditStatsDetails', field: 'telemetryEditStatsDetails' },
+  { ideKey: 'telemetry.editStats.showDecorations', label: 'settings.telemetryEditStatsDecorations', field: 'telemetryEditStatsDecorations' },
+  { ideKey: 'telemetry.editStats.showStatusBar', label: 'settings.telemetryEditStatsStatusBar', field: 'telemetryEditStatsStatusBar' },
+]
+
 export const buildThemeOptions = (t) => [
+  // 跟随系统：由 next-themes 按 prefers-color-scheme 解析为 light / dark
+  { key: 'system', name: t('settings.themeSystem') || 'Follow system', iconName: 'Monitor', color: 'from-slate-400 to-slate-600' },
   { key: 'light', name: t('settings.light') || 'Light', iconName: 'Sun', color: 'from-blue-400 to-blue-600' },
   { key: 'dark', name: t('settings.dark') || 'Dark', iconName: 'Moon', color: 'from-gray-700 to-gray-900' },
   { key: 'purple', name: t('settings.purple') || 'Purple', iconName: 'Palette', color: 'from-purple-500 to-purple-700' },
