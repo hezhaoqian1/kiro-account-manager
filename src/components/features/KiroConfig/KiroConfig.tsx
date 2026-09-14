@@ -32,20 +32,12 @@ function KiroConfig() {
     getSkills(projectDir || null).then(skills => setSkillsCount(skills?.length || 0)).catch(() => {})
     getCustomAgents(projectDir || null).then(agents => setAgentsCount(agents?.length || 0)).catch(() => {})
 
-    if (projectDir) {
-      getHooks(projectDir).then(hooks => setHooksCount(hooks?.length || 0)).catch(() => setHooksCount(0))
-    } else {
-      setHooksCount(0)
-    }
+    // 无项目时同样加载：HooksPanel 会展示用户级 hooks（~/.kiro/hooks），计数须与之一致。
+    // 与上面 steering / skills / agents 的写法保持一致。
+    getHooks(projectDir || null).then(hooks => setHooksCount(hooks?.length || 0)).catch(() => setHooksCount(0))
 
     getPowers().then(powers => setPowersCount(powers?.length || 0)).catch(() => {})
   }, [projectDir])
-
-  useEffect(() => {
-    if (!projectDir && activeTab === 'hooks') {
-      setActiveTab('mcp')
-    }
-  }, [projectDir, activeTab])
 
 
   const handleSelectProjectDir = async () => {
@@ -64,7 +56,7 @@ function KiroConfig() {
     { id: 'powers', label: t('kiroConfig.powers'), icon: Zap, count: powersCount },
     { id: 'agents', label: t('kiroConfig.agents'), icon: Bot, count: agentsCount },
     { id: 'skills', label: t('kiroConfig.skills'), icon: Puzzle, count: skillsCount },
-    { id: 'hooks', label: t('kiroConfig.hooks'), icon: Link2, count: hooksCount, disabled: !projectDir },
+    { id: 'hooks', label: t('kiroConfig.hooks'), icon: Link2, count: hooksCount },
     { id: 'steering', label: t('kiroConfig.steering'), icon: FileText, count: steeringCount },
   ]
 
@@ -112,13 +104,10 @@ function KiroConfig() {
           <TabsList className="glass-card flex h-10 w-full justify-start overflow-x-auto rounded-lg border-none p-0.5 no-scrollbar lg:w-fit">
             {TABS.map(tab => {
               const Icon = tab.icon
-              const isDisabled = !!tab.disabled
               return (
                 <TabsTrigger
                   key={tab.id}
                   value={tab.id}
-                  disabled={isDisabled}
-                  title={isDisabled ? t('kiroConfig.selectProjectDir') : ''}
                   className="gap-1.5 px-3 h-9 shrink-0 text-sm font-medium data-[state=active]:shadow-sm"
                 >
                   <Icon size={14} />
@@ -149,17 +138,9 @@ function KiroConfig() {
             <SkillsPanel onCountChange={setSkillsCount} projectDir={projectDir} />
           </TabsContent>
           <TabsContent value="hooks" className="h-full m-0">
-            {projectDir
-              ? <HooksPanel onCountChange={setHooksCount} projectDir={projectDir} />
-              : (
-                <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
-                  <div className="text-center">
-                    <FolderOpen size={32} className="mx-auto mb-2 opacity-30" />
-                    <p>{t('kiroConfig.selectProjectDir')}</p>
-                  </div>
-                </div>
-              )
-            }
+            {/* 不再要求先选项目：HooksPanel 支持无项目时只展示用户级 hooks（~/.kiro/hooks），
+                项目级操作在面板内部按 projectDir 是否为空自行禁用。与同级面板保持一致。 */}
+            <HooksPanel onCountChange={setHooksCount} projectDir={projectDir} />
           </TabsContent>
           <TabsContent value="agents" className="h-full m-0">
             <AgentsPanel onCountChange={setAgentsCount} projectDir={projectDir} />
