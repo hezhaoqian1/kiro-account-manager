@@ -25,3 +25,10 @@ export function getSystemMachineGuid<T = any>() {
 export function resetSystemMachineGuid() {
   return invoke<string>('reset_system_machine_guid')
 }
+
+// 以管理员身份重启应用（机器码重置等需要提权的场景）。
+// 后端会先把当前数据目录通过 --data-dir= 传给提权实例，避免以其他管理员账号
+// 提权时 %APPDATA% 漂移导致读不到账号数据。
+export function restartAsAdmin() {
+  return invoke<void>('restart_as_admin')
+}

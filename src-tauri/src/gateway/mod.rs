@@ -636,6 +636,41 @@ fn append_gateway_request_log_to_path(
     writeln!(file, "{serialized}").map_err(|e| format!("写入请求日志失败: {e}"))
 }
 
+/// 单个网关原始报文日志的体积上限。超过即轮转为 `<name>.log.1`。
+///
+/// 背景：原始报文转储（`kiro-request.log` / `anthropic-messages-*.log` 等）原先是
+/// 纯 `OpenOptions::append` 无限追加、从不回收，实测单文件涨到 221MB、
+/// 整个 logs 目录合计约 372MB，只能靠用户手动清理。
+const RAW_LOG_MAX_BYTES: u64 = 32 * 1024 * 1024;
+
+/// 收敛网关日志目录体积：把超过 [`RAW_LOG_MAX_BYTES`] 的 `*.log` 轮转为 `*.log.1`，
+/// 让后续追加从头开始。旧备份会被覆盖，故每个文件最多约占 2×上限。
+///
+/// - 由 `proxy_handler` 按固定请求间隔低频调用，不在热路径上每次执行。
+/// - 轮转失败（文件被占用等）静默忽略，下次再试；不会影响正常请求。
+/// - `*.log.1` 备份本身因扩展名不是 `log` 会被跳过，不会反复轮转。
+pub fn enforce_raw_log_caps() {
+    let log_dir = crate::core::paths::app_data_dir_or_default().join(LOGS_DIR);
+    let Ok(entries) = std::fs::read_dir(&log_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("log") {
+            continue;
+        }
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        if !meta.is_file() || meta.len() <= RAW_LOG_MAX_BYTES {
+            continue;
+        }
+        let backup = path.with_extension("log.1");
+        let _ = std::fs::remove_file(&backup);
+        let _ = std::fs::rename(&path, &backup);
+    }
+}
+
 fn get_gateway_request_logs_from_path(
     path: &Path,
     limit: Option<usize>,

@@ -43,8 +43,27 @@ pub fn identifier() -> &'static str {
         .unwrap_or(FALLBACK_IDENTIFIER)
 }
 
+/// 数据目录覆盖值，由 `--data-dir=` 命令行参数注入。
+///
+/// 背景（提权导致数据目录漂移）：以管理员身份重启时，若用户在 UAC 输入的是**其他管理员
+/// 账号**的凭据，进程会以那个账号运行，`%APPDATA%` 也随之变成**该管理员**的目录。
+/// 结果应用读不到原用户的 `accounts.json`，表现为「账号全部消失」，用户极易误判为数据丢失。
+///
+/// 处理：`restart_as_admin` 在提权前把当前真实数据目录通过 `--data-dir=` 传给提权实例，
+/// 提权实例沿用该路径，不再依赖 `%APPDATA%` 重新解析。未传该参数时行为与以前完全一致。
+static DATA_DIR_OVERRIDE: OnceLock<PathBuf> = OnceLock::new();
+
+/// 注入数据目录覆盖值。**仅**应在 `main()` 解析到 `--data-dir=` 时调用（进程内一次）。
+pub fn set_data_dir_override(dir: PathBuf) {
+    let _ = DATA_DIR_OVERRIDE.set(dir);
+}
+
 /// 官方应用数据目录。系统目录不可用时返回 `None`。
+/// 已通过 `--data-dir=` 注入覆盖值时（提权场景）优先返回覆盖值。
 pub fn app_data_dir() -> Option<PathBuf> {
+    if let Some(dir) = DATA_DIR_OVERRIDE.get() {
+        return Some(dir.clone());
+    }
     dirs::data_dir().map(|dir| dir.join(DATA_DIR_NAME))
 }
 
@@ -53,6 +72,9 @@ pub fn app_data_dir() -> Option<PathBuf> {
 /// 用于原本 `dirs::data_dir().unwrap_or_default()` 的调用点——那个写法会退化成
 /// **相对路径**，把数据写进当前工作目录。这里顺手修正为落到 `$HOME`。
 pub fn app_data_dir_or_default() -> PathBuf {
+    if let Some(dir) = DATA_DIR_OVERRIDE.get() {
+        return dir.clone();
+    }
     match dirs::data_dir() {
         Some(dir) => dir.join(DATA_DIR_NAME),
         None => home_dir().join(DATA_DIR_NAME),

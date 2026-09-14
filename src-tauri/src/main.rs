@@ -95,10 +95,10 @@ use commands::kiro_cli_cmd::{
 };
 //kiroshe
 use commands::kiro_settings_cmd::{
-    get_kiro_settings, set_kiro_agent_autonomy, set_kiro_codebase_indexing, set_kiro_configure_mcp,
-    set_kiro_debug_logs, set_kiro_model, set_kiro_notification, set_kiro_proxy,
-    set_kiro_reference_tracker, set_kiro_tab_autocomplete, set_kiro_telemetry,
-    set_kiro_trusted_commands, set_kiro_trusted_tools, set_kiro_usage_summary,
+    get_kiro_settings, open_kiro_settings_file, set_kiro_agent_autonomy, set_kiro_agent_setting,
+    set_kiro_codebase_indexing, set_kiro_configure_mcp, set_kiro_debug_logs, set_kiro_model,
+    set_kiro_notification, set_kiro_proxy, set_kiro_reference_tracker, set_kiro_tab_autocomplete,
+    set_kiro_telemetry, set_kiro_usage_summary,
 };
 use commands::machine_guid::{
     clear_macos_override, generate_machine_guid, get_system_machine_guid,
@@ -113,6 +113,7 @@ use commands::custom_agents_cmd::{
     save_custom_agent,
 };
 use commands::hooks_cmd::{create_hook, delete_hook, get_hook, get_hooks, save_hook};
+use commands::permissions_cmd::{get_permission_capabilities, get_permissions, save_permissions};
 use commands::session_manager::{
     delete_session, delete_workspace, export_session, list_sessions, list_workspaces, load_session,
     search_sessions,
@@ -193,8 +194,10 @@ fn setup_log_plugin() -> tauri_plugin_log::Builder {
             }),
             tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
         ])
-        // 日志轮转：每个文件最大 10MB，保留最近 5 个文件
-        .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepAll)
+        // 日志轮转：每个文件最大 10MB，保留最近 5 个文件（含当前激活的 app.log：4 个归档 + 1 个当前）
+        // 注意：KeepAll 会无限累积归档文件（实测曾堆积 11 个、共 172MB），故用 KeepSome 显式限制。
+        // remove_old_files 只清理以 app_ 开头的归档，旧命名的 KiroAccountManager*.log 不会被处理。
+        .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(5))
         .max_file_size(10_000_000)
 }
 
@@ -401,6 +404,18 @@ fn setup_window_close_handler(app: &mut tauri::App) -> Result<(), Box<dyn std::e
 
 #[allow(clippy::too_many_lines)] // Tauri 框架要求在 main 中注册所有命令，无法拆分
 fn main() {
+    // 解析 --data-dir=<路径>（由 restart_as_admin 在提权前注入）。
+    // 必须在任何路径解析之前完成：以其他管理员账号凭据提权时，进程的 %APPDATA% 会指向
+    // 那个管理员，若不沿用原目录就会读不到账号数据（表现为「账号全部消失」）。
+    for arg in std::env::args() {
+        if let Some(value) = arg.strip_prefix("--data-dir=") {
+            core::paths::set_data_dir_override(std::path::PathBuf::from(
+                value.trim_matches('"'),
+            ));
+            break;
+        }
+    }
+
     // 注入 bundle identifier（仅用于日志展示）。应用数据目录固定为
     // `%APPDATA%\.kiro-account-manager`（点前缀旧约定，用户确认保持不变，不随 identifier 变化）。
     let tauri_context = tauri::generate_context!();
@@ -513,19 +528,22 @@ fn main() {
             is_kiro_ide_running,
             // Kiro IDE 设置命令
             get_kiro_settings,
+            open_kiro_settings_file,
+            get_permissions,
+            save_permissions,
+            get_permission_capabilities,
             set_kiro_proxy,
             set_kiro_model,
             set_kiro_codebase_indexing,
-            set_kiro_trusted_commands,
             set_kiro_agent_autonomy,
             set_kiro_tab_autocomplete,
             set_kiro_usage_summary,
             set_kiro_debug_logs,
             set_kiro_notification,
-            set_kiro_trusted_tools,
             set_kiro_reference_tracker,
             set_kiro_configure_mcp,
             set_kiro_telemetry,
+            set_kiro_agent_setting,
             // 应用设置命令
             get_app_settings,
             save_app_settings,

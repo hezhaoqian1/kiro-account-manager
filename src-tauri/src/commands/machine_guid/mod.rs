@@ -87,13 +87,22 @@ pub async fn restart_as_admin(app: tauri::AppHandle) -> Result<(), String> {
         // 改用阻塞 output():Start-Process(不带 -Wait)会在提权进程一启动就返回,UAC 被
         // 拒绝时会抛出终止错误使 PowerShell 非零退出。据此确认提权成功后再退旧进程,
         // 失败则原样返回错误、不退出,让用户可重试。
+        // 把当前真实数据目录一并传给提权实例。
+        // 背景：以「其他管理员账号」的凭据提权时，进程的 %APPDATA% 会变成那个管理员的，
+        // 应用会读不到原用户的 accounts.json（表现为账号全部消失）。沿用原目录即可避免。
+        // 单引号内的双引号是字面量，PowerShell 会把 --data-dir="..." 原样传给目标进程。
+        let quote = '"';
+        let data_dir = crate::core::paths::app_data_dir_or_default();
+        let data_dir_arg = format!("--data-dir={quote}{}{quote}", data_dir.display());
+
         let output = Command::new("powershell")
             .args([
                 "-NoProfile",
                 "-Command",
                 &format!(
-                    "$ErrorActionPreference='Stop'; Start-Process -FilePath '{}' -Verb RunAs",
-                    exe_path.display().to_string().replace('\'', "''")
+                    "$ErrorActionPreference='Stop'; Start-Process -FilePath '{}' -ArgumentList '{}' -Verb RunAs",
+                    exe_path.display().to_string().replace('\'', "''"),
+                    data_dir_arg.replace('\'', "''")
                 ),
             ])
             .output()
@@ -121,7 +130,13 @@ pub async fn restart_as_admin(app: tauri::AppHandle) -> Result<(), String> {
         // 尝试使用 pkexec。pkexec 会作为提权进程的父进程一直存活(不能用阻塞 output()
         // 等它,那会挂到 app 退出),所以 spawn 后短暂 try_wait 探测:若 polkit 授权被取消,
         // pkexec 会很快以非零码退出——此时不退出旧进程,返回错误让用户重试(M13)。
-        let mut child = match Command::new("pkexec").arg(&exe_path).spawn() {
+        // 与 Windows 同理：root 下 HOME / XDG_DATA_HOME 会指向 root，显式传原数据目录。
+        let data_dir = crate::core::paths::app_data_dir_or_default();
+        let mut child = match Command::new("pkexec")
+            .arg(&exe_path)
+            .arg(format!("--data-dir={}", data_dir.display()))
+            .spawn()
+        {
             Ok(child) => child,
             Err(_) => {
                 return Err("请使用 sudo 或 pkexec 手动以 root 权限运行程序".to_string());

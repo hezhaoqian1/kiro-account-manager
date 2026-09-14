@@ -12,6 +12,13 @@ pub async fn proxy_handler(
     let request_index = state
         .request_count
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+    // 低频收敛日志体积：每 256 个请求扫一次日志目录，避免每次请求都做磁盘扫描。
+    // index 为 0 时也会执行，可顺带处理启动前就已超限的历史文件（如已涨到 221MB 的 kiro-request.log）。
+    if request_index % 256 == 0 {
+        crate::gateway::enforce_raw_log_caps();
+    }
+
     let endpoint = get_request_endpoint(format);
     let get_client_log_prefix = get_client_log_prefix(format);
     let started_at = Instant::now();
