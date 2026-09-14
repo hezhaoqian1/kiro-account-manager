@@ -1,4 +1,10 @@
-// Custom Agents 管理（读取/编辑 ~/.kiro/agents/*.md 和 <project>/.kiro/agents/*.md）
+// Custom Agents 管理（读取/编辑 ~/.kiro/agents/*.json 和 <project>/.kiro/agents/*.json）
+//
+// 版本兼容：Kiro IDE 1.0 起 custom agent 从 Markdown 改为 JSON 对象，字段为
+// name / description / model / tools / allowedTools / resources /
+// includeMcpJson / hooks / prompt。此处同时接受 .md 与 .json，
+// 使 IDE 0.x 遗留的 .md agent 仍可被列出与编辑。
+// 同目录下的 <name>.lock 由 IDE 自行维护，扩展名不匹配，不会被扫描。
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -37,7 +43,8 @@ impl CustomAgentsManager {
             let entry = entry.map_err(|e| format!("读取条目失败: {e}"))?;
             let path = entry.path();
 
-            if path.extension().is_some_and(|e| e == "md") {
+            // IDE 1.0 起为 .json；保留 .md 以兼容 IDE 0.x 遗留文件
+            if path.extension().is_some_and(|e| e == "md" || e == "json") {
                 let file_name = path
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())

@@ -105,6 +105,8 @@ Kiro Account Manager 是一个基于 **Tauri 2.x** 的桌面应用，用于集�
 - **修复**: `getUsageLimits` 不再携带 `profileArn`（企业号带了会 400）；Enterprise 查配额与普通账号统一路径，region 优先账号自身再回退 `us-east-1` / `eu-central-1`
 - **加固**: Skill 分支名注入防护、提权重启确认、OAuth deep link 锁中毒恢复
 - **网关**: 增加 GPT-5.6 系列与 Claude Sonnet 5；OpenAI token 估算改用 tiktoken-rs（`o200k_base`）；移除已下线的 Claude 3 别名映射
+- **适配**: 跟进 Kiro IDE 1.0 的本地配置格式 — Hooks 支持新的 `.json` 格式（单文件可含多个 hook，字段改为 `trigger` / `action`）并支持用户级全局 hooks（`~/.kiro/hooks`），Custom Agents 支持新的 JSON 格式（替代 Markdown front-matter）；旧格式的 `.kiro.hook` 与 `.md` 文件仍可识别与编辑
+- **适配**: 权限管理从旧版 Trusted Commands 迁移到 Kiro IDE 1.0 的 `permissions.yaml` 能力模型 — 新增全局权限规则编辑器（capability / effect / match / exclude / policies），后端直接读写 `~/.kiro/settings/permissions.yaml`；首次读取时兜底迁移旧 `kiroAgent.*` 配置，并移除所有旧 Trusted Commands 死代码
 
 ### 🏗️ v1.9.2 - 2026-06-17 — Linux ARM64 架构支持与 macOS 启动修复
 

@@ -1,23 +1,43 @@
-import type React from 'react'
-import { Search, RefreshCw, Check, Sparkles, Bot, Network, Wrench, Lock } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Search, RefreshCw, Check, Sparkles, Bot, Network, Wrench, Lock, Bell, ShieldQuestion } from 'lucide-react'
 import { Input } from '../../ui/input'
 import { Textarea } from '../../ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select'
 import { Label } from '../../ui/label'
-import { AI_MODELS } from './settingsConstants'
+import {
+  AI_MODELS,
+  NOTIFICATION_ROWS,
+  TELEMETRY_ROWS,
+  type NotificationState,
+  type TelemetryState,
+} from './settingsConstants'
+import { getKiroSettings, setKiroAgentSetting } from '../../../api/settingsApi'
+import { useDialog } from '../../../contexts/DialogContext'
 import SectionCard from './SectionCard'
 import SwitchRow from './SwitchRow'
 import ToggleRow from './ToggleRow'
+import KiroAgentAdvancedPanel from './KiroAgentAdvancedPanel'
+import PermissionsPanel from './PermissionsPanel'
+
+// Kiro 设置页（kiro tab）的全部内容。
+//
+// 布局原则：**按功能聚合，卡内控件至少 2 个**（避免「一个开关一张卡」的 section 通胀），
+// **同主题的卡必须相邻**，命名空间只作为「让同类键相邻」的辅助目标：
+//   1-7. kiroAgent.* —— AI 模型 / Agent 行为（含 kiro.startupMode）/ 配置 MCP / 通知
+//                       / Agent 高级 / 实验与高级 / 信任与自动批准
+//   8.   权限规则     —— 独立配置（permissions）；紧贴「信任与自动批准」，同属
+//                       「agent 能否不经询问就动手」
+//   9.   telemetry.* —— 遥测与隐私
+//   10.  http.*/app  —— 网络代理（按约定压尾）
+//
+// 说明：`kiro.*` 在 Kiro 里只有 startupMode 一个键，凑不成独立 section，因此并入
+// 「Agent 行为」——它决定 Kiro 是否直接进 Agent 聚焦，与 agentAutonomy 是一对。
 
 interface SettingsKiroProps {
   // 模型/工具
   aiModel: string
   lockModel: boolean
   agentAutonomy: string
-  trustedCommandsMode: string
-  customTrustedCommands: string
-  trustedTools: string
-  setTrustedTools: (value: string) => void
   configureMcp: string
   // 代理
   httpProxy: string
@@ -27,19 +47,19 @@ interface SettingsKiroProps {
   savingProxy: boolean
   detectingProxy: boolean
   savingModel: boolean
-  // Agent 行为开关（从原 SettingsAgent 合并过来）
+  // Agent 行为开关
   enableCodebaseIndexing: boolean
   enableTabAutocomplete: boolean
   usageSummary: boolean
   enableDebugLogs: boolean
   referenceTracker: boolean
+  // 通知 / 遥测
+  notifications: NotificationState
+  telemetry: TelemetryState
   // handlers
   handleApplyModel: (model: string) => Promise<void>
   handleLockModelChange: (checked: boolean) => Promise<void>
   handleAgentAutonomyChange: (mode: string) => Promise<void>
-  handleTrustedCommandsModeChange: (mode: string) => Promise<void>
-  handleCustomTrustedCommandsChange: (commands: string) => Promise<void>
-  handleTrustedToolsSave: (value: string) => Promise<void>
   handleConfigureMcpChange: (mode: string) => Promise<void>
   handleApplyProxy: () => Promise<void>
   handleDetectProxy: () => Promise<void>
@@ -49,17 +69,18 @@ interface SettingsKiroProps {
   handleUsageSummaryChange: (checked: boolean) => Promise<void>
   handleDebugLogsChange: (checked: boolean) => Promise<void>
   handleReferenceTrackerChange: (checked: boolean) => Promise<void>
+  handleNotificationChange: (key: string, checked: boolean, field: keyof NotificationState) => void
+  handleTelemetryChange: (ideKey: string, checked: boolean, field: keyof TelemetryState) => void
   t: (key: string) => string
 }
+
+const STARTUP_MODES = ['code', 'agentFocus'] as const
+const lines = (v: string) => v.split('\n').map(s => s.trim()).filter(Boolean)
 
 function SettingsKiro({
   aiModel,
   lockModel,
   agentAutonomy,
-  trustedCommandsMode,
-  customTrustedCommands,
-  trustedTools,
-  setTrustedTools,
   configureMcp,
   httpProxy,
   setHttpProxy,
@@ -73,12 +94,11 @@ function SettingsKiro({
   usageSummary,
   enableDebugLogs,
   referenceTracker,
+  notifications,
+  telemetry,
   handleApplyModel,
   handleLockModelChange,
   handleAgentAutonomyChange,
-  handleTrustedCommandsModeChange,
-  handleCustomTrustedCommandsChange,
-  handleTrustedToolsSave,
   handleConfigureMcpChange,
   handleApplyProxy,
   handleDetectProxy,
@@ -88,13 +108,48 @@ function SettingsKiro({
   handleUsageSummaryChange,
   handleDebugLogsChange,
   handleReferenceTrackerChange,
+  handleNotificationChange,
+  handleTelemetryChange,
   t,
 }: SettingsKiroProps) {
+  const { showError } = useDialog()
   const proxyChanged = httpProxy !== originalProxy
+
+  // 少量键（kiro.startupMode / kiroAgent.mcpApprovedEnvVars）自取自写，
+  // 省掉一层 props 透传；写入后由后端双向同步到 settings.json 与 app-settings.json。
+  const [extras, setExtras] = useState({ startupMode: 'code', mcpApprovedEnvVars: '' })
+
+  useEffect(() => {
+    let cancelled = false
+    getKiroSettings<any>()
+      .then(v => {
+        if (cancelled || !v) return
+        setExtras({
+          startupMode: v.startupMode ?? 'code',
+          mcpApprovedEnvVars: (v.mcpApprovedEnvVars ?? []).join('\n'),
+        })
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const patchExtras = (p: Partial<typeof extras>) => setExtras(prev => ({ ...prev, ...p }))
+
+  const applyExtra = async (key: string, value: unknown) => {
+    try {
+      await setKiroAgentSetting(key, value)
+    } catch (err) {
+      await showError(t('settings.saveFailed'), `${t('settings.saveFailed')}: ${err}`)
+    }
+  }
 
   return (
     <div className="space-y-3">
-      {/* === 1. AI 模型 === */}
+      {/* ========== 1-6. kiroAgent.* ========== */}
+
+      {/* 1. AI 模型 */}
       <SectionCard
         title={t('settings.aiModel')}
         accent="violet"
@@ -121,15 +176,31 @@ function SettingsKiro({
         />
       </SectionCard>
 
-      {/* === 2. Agent 行为 === */}
+      {/* 2. Agent 行为（含 kiro.startupMode）*/}
       <SectionCard
         title={t('settings.agentSettings')}
         accent="blue"
         icon={<Bot size={14} className="text-blue-500" />}
-        badge={<span className="text-[11px] text-muted-foreground">{t('settings.agentSettingsDesc')}</span>}
+        desc={t('settings.agentSettingsDesc')}
       >
-        {/* Agent 模式 + 信任命令（双列）*/}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div>
+            <Label className="block text-[11px] text-muted-foreground mb-1">{t('settings.agentStartupMode')}</Label>
+            <Select
+              value={extras.startupMode}
+              onValueChange={v => {
+                patchExtras({ startupMode: v })
+                void applyExtra('kiro.startupMode', v)
+              }}
+            >
+              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {STARTUP_MODES.map(m => (
+                  <SelectItem key={m} value={m}>{t(`settings.agentStartupMode_${m}`)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div>
             <Label className="block text-[11px] text-muted-foreground mb-1">{t('settings.agentAutonomy')}</Label>
             <Select value={agentAutonomy} onValueChange={handleAgentAutonomyChange}>
@@ -140,34 +211,9 @@ function SettingsKiro({
               </SelectContent>
             </Select>
           </div>
-
-          <div>
-            <Label className="block text-[11px] text-muted-foreground mb-1">{t('settings.trustedCommands')}</Label>
-            <Select value={trustedCommandsMode} onValueChange={handleTrustedCommandsModeChange}>
-              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">{t('settings.trustedCommandsNone')}</SelectItem>
-                <SelectItem value="common">{t('settings.trustedCommandsCommon')}</SelectItem>
-                <SelectItem value="all">{t('settings.trustedCommandsAll')}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
         </div>
+        <p className="text-[11px] text-muted-foreground">{t('settings.agentStartupModeDesc')}</p>
 
-        {trustedCommandsMode === 'common' && (
-          <div>
-            <Textarea
-              value={customTrustedCommands}
-              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => handleCustomTrustedCommandsChange(e.target.value)}
-              placeholder="npm *&#10;git *&#10;cargo *"
-              className="font-mono text-xs"
-              rows={3}
-            />
-            <p className="text-[11px] text-muted-foreground mt-1">{t('settings.trustedCommandsDesc')}</p>
-          </div>
-        )}
-
-        {/* 行为开关（5 个一排 grid）*/}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <ToggleRow
             checked={enableCodebaseIndexing}
@@ -197,34 +243,83 @@ function SettingsKiro({
         </div>
       </SectionCard>
 
-      {/* === 3. 工具与扩展 === */}
+      {/* 3. 配置 MCP（含 mcpApprovedEnvVars，把 MCP 相关键收在一处）*/}
       <SectionCard
-        title={t('settings.trustedTools')}
+        title={t('settings.configureMCP')}
         accent="amber"
         icon={<Wrench size={14} className="text-amber-500" />}
+        desc={t('settings.configureMCPDesc')}
       >
-        <div className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border bg-card">
-          <span className="text-sm font-medium text-foreground whitespace-nowrap">{t('settings.configureMCP')}</span>
-          <Select value={configureMcp} onValueChange={handleConfigureMcpChange}>
-            <SelectTrigger className="h-8 text-xs ml-auto w-[160px]"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="Enabled">{t('settings.configureMCPEnabled')}</SelectItem>
-              <SelectItem value="Disabled">{t('settings.configureMCPDisabled')}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <Select value={configureMcp} onValueChange={handleConfigureMcpChange}>
+          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="Enabled">{t('settings.configureMCPEnabled')}</SelectItem>
+            <SelectItem value="Disabled">{t('settings.configureMCPDisabled')}</SelectItem>
+          </SelectContent>
+        </Select>
 
-        <Input
-          value={trustedTools}
-          onChange={e => setTrustedTools(e.target.value)}
-          onBlur={e => handleTrustedToolsSave(e.target.value)}
-          placeholder={t('settings.trustedToolsPlaceholder')}
-          className="h-8 text-xs"
-        />
-        <p className="text-[11px] text-muted-foreground">{t('settings.trustedToolsDesc')}</p>
+        <div>
+          <Label className="block text-[11px] text-muted-foreground mb-1">
+            {t('settings.agentMcpApprovedEnvVars')}
+          </Label>
+          <Textarea
+            value={extras.mcpApprovedEnvVars}
+            onChange={e => patchExtras({ mcpApprovedEnvVars: e.target.value })}
+            onBlur={() => applyExtra('kiroAgent.mcpApprovedEnvVars', lines(extras.mcpApprovedEnvVars))}
+            placeholder="GITHUB_TOKEN"
+            className="font-mono text-xs"
+            rows={2}
+          />
+          <p className="text-[11px] text-muted-foreground mt-1">{t('settings.agentMcpApprovedEnvVarsDesc')}</p>
+        </div>
       </SectionCard>
 
-      {/* === 4. 网络代理 === */}
+      {/* 4. 通知 */}
+      <SectionCard
+        title={t('settings.notifications')}
+        accent="blue"
+        icon={<Bell size={14} className="text-blue-500" />}
+        desc={t('settings.notificationsDesc')}
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {NOTIFICATION_ROWS.map(row => (
+            <ToggleRow
+              key={row.key}
+              checked={notifications[row.field]}
+              onChange={checked => handleNotificationChange(row.key, checked, row.field)}
+              label={t(row.label)}
+            />
+          ))}
+        </div>
+      </SectionCard>
+
+      {/* 5-7. Agent 高级 / 实验与高级 / 信任与自动批准（子面板）*/}
+      <KiroAgentAdvancedPanel t={t} />
+
+      {/* ========== 8. 权限规则（独立配置，不属于 settings.json）==========
+          紧贴上面的「信任与自动批准」：两者同属「agent 能否不经询问就动手」。 */}
+      <PermissionsPanel t={t} />
+
+      {/* ========== 9. telemetry.* ========== */}
+      <SectionCard
+        title={t('settings.telemetry')}
+        accent="orange"
+        icon={<ShieldQuestion size={14} className="text-orange-500" />}
+        desc={t('settings.telemetryDesc')}
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {TELEMETRY_ROWS.map(row => (
+            <ToggleRow
+              key={row.ideKey}
+              checked={telemetry[row.field]}
+              onChange={checked => handleTelemetryChange(row.ideKey, checked, row.field)}
+              label={t(row.label)}
+            />
+          ))}
+        </div>
+      </SectionCard>
+
+      {/* ========== 10. 网络代理（压尾）========== */}
       <SectionCard
         title={t('settings.proxy')}
         accent="green"
@@ -232,7 +327,6 @@ function SettingsKiro({
         desc={t('settings.proxyTip')}
       >
         <div className="space-y-3">
-          {/* Kiro IDE 代理输入 + 操作按钮 */}
           <div>
             <Label className="block text-[11px] text-muted-foreground mb-1">{t('settings.httpProxy')}</Label>
             <div className="flex gap-1.5">

@@ -16,10 +16,42 @@ import {
 import { handleUiError } from '../../../utils/errorLogger'
 import React from 'react'
 
-// 解析 agent front-matter（v0.10.32 完整 schema: name, description, tools, model, includeMcpJson, includePowers）
+// 解析 agent 内容，按内容自动判别两种格式：
+//   IDE 1.0：整份内容是一个 JSON 对象（name / description / model / tools /
+//            allowedTools / resources / includeMcpJson / hooks / prompt）
+//   IDE 0.x：Markdown + YAML front-matter（name / description / tools / model /
+//            includeMcpJson / includePowers）
+// 返回额外的 isJson 与 raw：isJson 决定保存时回写成哪种格式，
+// raw 保留原始 JSON 对象，使本工具不认识的字段（resources / allowedTools / hooks 等）不丢失。
 const parseAgentFrontMatter = (content: string) => {
+  const trimmed = content.trim()
+
+  if (trimmed.startsWith('{')) {
+    try {
+      const obj = JSON.parse(trimmed)
+      if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+        return {
+          name: typeof obj.name === 'string' ? obj.name : '',
+          description: typeof obj.description === 'string' ? obj.description : '',
+          tools: Array.isArray(obj.tools) ? obj.tools.filter((t: unknown) => typeof t === 'string') : [],
+          model: typeof obj.model === 'string' ? obj.model : '',
+          includeMcpJson: obj.includeMcpJson === true,
+          includePowers: obj.includePowers === true,
+          // prompt 既可能是内联提示词，也可能是 file:// 路径，原样保留
+          body: typeof obj.prompt === 'string' ? obj.prompt : '',
+          isJson: true,
+          raw: obj,
+        }
+      }
+    } catch {
+      // 不是合法 JSON，落到 front-matter 分支
+    }
+  }
+
   const match = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
-  if (!match) return { name: '', description: '', tools: [] as string[], model: '', includeMcpJson: false, includePowers: false, body: content }
+  if (!match) {
+    return { name: '', description: '', tools: [] as string[], model: '', includeMcpJson: false, includePowers: false, body: content, isJson: false, raw: null }
+  }
   const [, fm, body] = match
   // 解析 tools 列表（YAML 数组格式或 "*"）
   let tools: string[] = []
@@ -42,12 +74,29 @@ const parseAgentFrontMatter = (content: string) => {
     model: fm.match(/model:\s*['"]?([^'"\n]+)['"]?/)?.[1]?.trim() || '',
     includeMcpJson: /includeMcpJson:\s*true/.test(fm),
     includePowers: /includePowers:\s*true/.test(fm),
-    body
+    body,
+    isJson: false,
+    raw: null,
   }
 }
 
-// 组装 agent front-matter（v0.10.32 完整 schema）
-const buildAgentContent = ({ name, description, tools, model, includeMcpJson, includePowers }: any, body: string) => {
+// 组装 agent 内容。isJson 为真时输出 IDE 1.0 的 JSON 对象，否则输出 IDE 0.x 的
+// Markdown + YAML front-matter（仅供兼容旧环境）。
+// JSON 分支以 raw（解析时保留的原始对象）为基础回填，因此 resources / allowedTools /
+// hooks 等本工具不编辑的字段不会被覆盖丢失。
+const buildAgentContent = ({ name, description, tools, model, includeMcpJson, includePowers, isJson, raw }: any, body: string) => {
+  if (isJson) {
+    const obj: Record<string, unknown> = raw && typeof raw === 'object' ? { ...raw } : {}
+    if (name) obj.name = name
+    if (description) obj.description = description
+    if (model) obj.model = model
+    if (Array.isArray(tools) && tools.length > 0) obj.tools = tools
+    obj.includeMcpJson = includeMcpJson === true
+    if (includePowers !== undefined) obj.includePowers = includePowers === true
+    obj.prompt = body ?? ''
+    return JSON.stringify(obj, null, 2) + '\n'
+  }
+
   let fm = '---'
   if (name) fm += `\nname: "${name}"`
   if (description) fm += `\ndescription: "${description}"`
@@ -86,7 +135,11 @@ const ScopeBadge = ({ scope, accent }: any) => {
   )
 }
 
-// Kiro v0.10.32 可用的工具标签
+// 可选工具标签（来自 Kiro IDE 0.x）。
+// 注意：IDE 1.0 的工具名体系已更换——实测 1.0.437 的 agent 使用 execute_bash / fs_read /
+// fs_write / code / grep / glob / web_fetch / web_search / introspect / session /
+// report / tool_search 等，MCP 工具以 @server 形式出现。由于未拿到 1.0 的完整工具名清单，
+// 此处暂不替换，待确认后再整体更新。
 const AVAILABLE_TOOL_TAGS = [
   '*',
   'read', 'edit', 'browser', 'terminal', 'search', 'mcp',
@@ -231,9 +284,16 @@ function AgentsPanel({ onCountChange, projectDir }: any) {
   }
 
   const handleCreate = async (agentName: string, description: string, tools: string[], model: string, scope: string) => {
-    const fileName = agentName.endsWith('.md') ? agentName : `${agentName}.md`
-    const body = '\n<!-- 在此编写 Agent 的系统提示词 -->\n'
-    const content = buildAgentContent({ name: agentName.replace('.md', ''), description, tools, model, includeMcpJson: false, includePowers: false }, body)
+    // IDE 1.0 起 custom agent 为 .json；只有用户显式写了 .md 才按旧格式创建
+    const lower = agentName.toLowerCase()
+    const isLegacy = lower.endsWith('.md')
+    const fileName = isLegacy || lower.endsWith('.json') ? agentName : `${agentName}.json`
+    const baseName = isLegacy ? agentName.replace(/\.md$/i, '') : agentName.replace(/\.json$/i, '')
+    const body = isLegacy ? '\n<!-- 在此编写 Agent 的系统提示词 -->\n' : '在此编写 Agent 的系统提示词'
+    const content = buildAgentContent(
+      { name: baseName, description, tools, model, includeMcpJson: false, includePowers: false, isJson: !isLegacy, raw: null },
+      body,
+    )
     try {
       const newAgent = await createCustomAgent(fileName, content, scope, projectDir || null)
       const newAgents = [...agents, newAgent]

@@ -29,16 +29,17 @@ export function getHooks<T = any[]>(projectDir: string | null = null) {
   return invoke<T>('get_hooks', { projectDir })
 }
 
-export function saveHook(fileName: string, content: string, projectDir: string | null = null) {
-  return invoke('save_hook', { fileName, content, projectDir })
+// scope: "user" = 用户级（~/.kiro/hooks，Kiro IDE 1.0.182+）；"project" = 项目级
+export function saveHook(fileName: string, content: string, scope: string, projectDir: string | null = null) {
+  return invoke('save_hook', { fileName, content, scope, projectDir })
 }
 
-export function deleteHook(fileName: string, projectDir: string | null = null) {
-  return invoke('delete_hook', { fileName, projectDir })
+export function deleteHook(fileName: string, scope: string, projectDir: string | null = null) {
+  return invoke('delete_hook', { fileName, scope, projectDir })
 }
 
-export function createHook<T = any>(fileName: string, content: string, projectDir: string | null = null) {
-  return invoke<T>('create_hook', { fileName, content, projectDir })
+export function createHook<T = any>(fileName: string, content: string, scope: string, projectDir: string | null = null) {
+  return invoke<T>('create_hook', { fileName, content, scope, projectDir })
 }
 
 // ============================================================

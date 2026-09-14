@@ -16,6 +16,7 @@ pub mod hooks_cmd;
 pub mod kiro_cli_cmd;
 pub mod kiro_settings_cmd;
 pub mod machine_guid;
+pub mod permissions_cmd;
 pub mod mcp_cmd;
 pub mod powers_cmd;
 pub mod proxy_cmd;

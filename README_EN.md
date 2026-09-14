@@ -93,6 +93,8 @@ Entries are grouped by the actual GitHub Release publish windows.
 - **Fix**: `getUsageLimits` no longer sends `profileArn` (enterprise 400); Enterprise usage uses the same path as other accounts with region preference + `us-east-1` / `eu-central-1` fallback
 - **Harden**: Skill branch-name injection guard, elevation restart confirmation, OAuth deep-link lock poison recovery
 - **Gateway**: GPT-5.6 series and Claude Sonnet 5; OpenAI token estimates via tiktoken-rs (`o200k_base`); removed retired Claude 3 alias mapping
+- **Compat**: Follow Kiro IDE 1.0 local config format — Hooks support the new `.json` format (one file may hold multiple hooks; fields changed to `trigger` / `action`) plus user-level global hooks (`~/.kiro/hooks`); Custom Agents support the new JSON format (replacing Markdown front-matter). Legacy `.kiro.hook` and `.md` files remain readable and editable
+- **Compat**: Permission management migrated from the legacy Trusted Commands to Kiro IDE 1.0's `permissions.yaml` capability model — added a global permission rule editor (capability / effect / match / exclude / policies); the backend reads/writes `~/.kiro/settings/permissions.yaml` directly; legacy `kiroAgent.*` config is migrated as a one-time fallback on first read, and all legacy Trusted Commands dead code was removed
 
 ### 🏗️ v1.9.2 - 2026-06-17 — Linux ARM64 Architecture Support and macOS Startup Fix
 

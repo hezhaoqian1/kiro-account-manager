@@ -93,6 +93,8 @@ Kiro Account Manager - это десктопное приложение на б�
 - **Исправлено**: `getUsageLimits` больше не передаёт `profileArn` (у enterprise давало 400); Enterprise и обычные аккаунты на одном пути, region с приоритетом аккаунта и fallback `us-east-1` / `eu-central-1`
 - **Усилено**: защита от injection в имени ветки Skill, подтверждение elevation restart, восстановление после poison lock deep link OAuth
 - **Шлюз**: серии GPT-5.6 и Claude Sonnet 5; оценка OpenAI-токенов через tiktoken-rs (`o200k_base`); удалены устаревшие алиасы Claude 3
+- **Совместимость**: поддержка локального формата конфигурации Kiro IDE 1.0 — Hooks поддерживают новый формат `.json` (один файл может содержать несколько hook; поля изменены на `trigger` / `action`) и пользовательские глобальные hooks (`~/.kiro/hooks`); Custom Agents поддерживают новый JSON-формат (вместо Markdown front-matter). Старые файлы `.kiro.hook` и `.md` остаются читаемыми и редактируемыми
+- **Совместимость**: управление правами перенесено с устаревших Trusted Commands на модель возможностей `permissions.yaml` Kiro IDE 1.0 — добавлен глобальный редактор правил доступа (capability / effect / match / exclude / policies); бэкенд напрямую читает/пишет `~/.kiro/settings/permissions.yaml`; устаревшая конфигурация `kiroAgent.*` мигрируется однократно при первом чтении, весь мёртвый код Trusted Commands удалён
 
 ### 🏗️ v1.9.2 - 2026-06-17 — поддержка архитектуры Linux ARM64 и исправление запуска macOS
 

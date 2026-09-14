@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useMemo } from 'react'
 import { getHooks, saveHook, deleteHook, createHook } from '../../../api/kiroConfigApi'
-import { FolderOpen, Link2, Plus, RefreshCw, Save, Trash2, X } from 'lucide-react'
+import { Link2, Plus, RefreshCw, Save, Trash2, X } from 'lucide-react'
 import { useApp } from '../../../hooks/useApp'
 import { useDialog } from '../../../contexts/DialogContext'
 import { handleUiError } from '../../../utils/errorLogger'
@@ -8,6 +8,36 @@ import { getThemeAccent, getSolidAccentButton, getGradientAccentButton, getTheme
 import React from 'react'
 
 const formatSize = (bytes: number) => bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`
+
+// Kiro IDE 1.0 起 hook 文件改为 .json（单文件可含多个 hook，字段 trigger / action）；
+// IDE 0.x 的 .kiro.hook（when / then）仍可识别，故两种后缀都接受，新建默认用 .json。
+const HOOK_SUFFIX = '.json'
+const HOOK_SUFFIX_LEGACY = '.kiro.hook'
+const HOOK_BASE_NAME_RE = /^[A-Za-z0-9._-]+$/
+
+// 去掉已知后缀，返回文件名主体
+const stripHookSuffix = (name: string): string => {
+  const lower = name.toLowerCase()
+  if (lower.endsWith(HOOK_SUFFIX_LEGACY)) return name.slice(0, -HOOK_SUFFIX_LEGACY.length)
+  if (lower.endsWith(HOOK_SUFFIX)) return name.slice(0, -HOOK_SUFFIX.length)
+  return name
+}
+
+// 已带 .json / .kiro.hook 的原样返回，否则补 .json
+const normalizeHookFileName = (raw: string): string => {
+  const name = raw.trim()
+  if (!name) return ''
+  const lower = name.toLowerCase()
+  if (lower.endsWith(HOOK_SUFFIX_LEGACY) || lower.endsWith(HOOK_SUFFIX)) return name
+  return `${name}${HOOK_SUFFIX}`
+}
+
+// 去掉已知后缀后的主体必须只含 [A-Za-z0-9._-]
+const isValidHookFileName = (raw: string): boolean => {
+  const name = raw.trim()
+  if (!name) return false
+  return HOOK_BASE_NAME_RE.test(stripHookSuffix(name))
+}
 
 function HooksPanel({ onCountChange, projectDir }: any) {
   const { t, theme } = useApp()
@@ -34,16 +64,8 @@ function HooksPanel({ onCountChange, projectDir }: any) {
   const [showCreateModal, setShowCreateModal] = useState(false)
 
   const loadHooks = useCallback(async () => {
-    if (!projectDir) {
-      setHooks([])
-      setSelectedHook(null)
-      setEditContent('')
-      setHasChanges(false)
-      onCountChange?.(0)
-      setLoading(false)
-      return
-    }
-
+    // 无项目目录时仍要加载：用户级 hooks（~/.kiro/hooks）不依赖项目。
+    // 后端 get_hooks 的 project_dir 本就是 Option，缺省时只扫用户级目录。
     setLoading(true)
     try {
       const data = await getHooks(projectDir)
@@ -71,11 +93,13 @@ function HooksPanel({ onCountChange, projectDir }: any) {
   }
 
   const handleSave = async () => {
-    if (!selectedHook || !projectDir) return
+    if (!selectedHook) return
+    // 用户级 hook（~/.kiro/hooks）不依赖项目目录，只有项目级才要求
+    if ((selectedHook.scope || 'project') !== 'user' && !projectDir) return
 
     setSaving(true)
     try {
-      await saveHook(selectedHook.fileName, editContent, projectDir)
+      await saveHook(selectedHook.fileName, editContent, selectedHook.scope || 'project', projectDir)
       const newList = hooks.map(h => (h.fileName === selectedHook.fileName)
         ? { ...h, content: editContent }
         : h)
@@ -90,10 +114,11 @@ function HooksPanel({ onCountChange, projectDir }: any) {
   }
 
   const handleDelete = async (hookFile: any) => {
-    if (!projectDir) return
+    // 用户级 hook（~/.kiro/hooks）不依赖项目目录，只有项目级才要求
+    if ((hookFile.scope || 'project') !== 'user' && !projectDir) return
     if (!await showConfirm(t('hooks.confirmDelete'), t('hooks.confirmDeleteFile', { fileName: hookFile.fileName }))) return
     try {
-      await deleteHook(hookFile.fileName, projectDir)
+      await deleteHook(hookFile.fileName, hookFile.scope || 'project', projectDir)
       const next = hooks.filter(h => h.fileName !== hookFile.fileName)
       setHooks(next)
       onCountChange?.(next.length)
@@ -107,8 +132,9 @@ function HooksPanel({ onCountChange, projectDir }: any) {
     }
   }
 
-  const handleCreate = async (fileName: string) => {
-    if (!projectDir) return false
+  const handleCreate = async (fileName: string, scope: string = 'project') => {
+    // 用户级（~/.kiro/hooks）不依赖项目目录
+    if (scope !== 'user' && !projectDir) return false
 
     const raw = fileName.trim()
     if (!raw) {
@@ -116,8 +142,8 @@ function HooksPanel({ onCountChange, projectDir }: any) {
       return false
     }
 
-    const normalized = raw.endsWith('.kiro.hook') ? raw : `${raw}.kiro.hook`
-    if (!/^[A-Za-z0-9._-]+\.kiro\.hook$/.test(normalized)) {
+    const normalized = normalizeHookFileName(raw)
+    if (!isValidHookFileName(raw)) {
       showError(t('hooks.createFailed'), t('hooks.fileNameInvalid'))
       return false
     }
@@ -128,8 +154,14 @@ function HooksPanel({ onCountChange, projectDir }: any) {
       return false
     }
 
-    const baseName = normalized.replace(/\.kiro\.hook$/i, '')
-    const template = `{
+    const baseName = stripHookSuffix(normalized)
+    const isLegacy = normalized.toLowerCase().endsWith(HOOK_SUFFIX_LEGACY)
+
+    // 新建模板按后缀给出对应格式：
+    // .json -> IDE 1.0（version + hooks[] + trigger + action）
+    // .kiro.hook -> IDE 0.x（when + then），仅供兼容旧环境
+    const template = isLegacy
+      ? `{
   "enabled": true,
   "name": "${baseName}",
   "description": "",
@@ -147,8 +179,24 @@ function HooksPanel({ onCountChange, projectDir }: any) {
   "fileName": "${normalized}"
 }
 `
+      : `{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "${baseName}",
+      "description": "",
+      "trigger": "PostFileSave",
+      "action": {
+        "type": "command",
+        "command": "echo TODO: 替换为实际命令"
+      },
+      "enabled": true
+    }
+  ]
+}
+`
     try {
-      const newHook = await createHook(normalized, template, projectDir)
+      const newHook = await createHook(normalized, template, scope, projectDir)
       const next = [...hooks, newHook]
       setHooks(next)
       onCountChange?.(next.length)
@@ -178,8 +226,7 @@ function HooksPanel({ onCountChange, projectDir }: any) {
             <div className="flex gap-2">
               <button
                 onClick={() => setShowCreateModal(true)}
-                disabled={!projectDir}
-                className={`cursor-pointer p-2 rounded-lg hover:bg-muted/50 transition-colors duration-200 focus:outline-none focus:ring-2 ${accent.ring} disabled:opacity-50 disabled:cursor-not-allowed`}
+                className={`cursor-pointer p-2 rounded-lg hover:bg-muted/50 transition-colors duration-200 focus:outline-none focus:ring-2 ${accent.ring}`}
               >
                 <Plus size={16} className={accent.text} />
               </button>
@@ -188,22 +235,20 @@ function HooksPanel({ onCountChange, projectDir }: any) {
               </button>
             </div>
           </div>
-          <div className={`mt-2 text-[11px] text-muted-foreground leading-relaxed`}>{t('hooks.projectOnly')}</div>
+          <div className={`mt-2 text-[11px] text-muted-foreground leading-relaxed`}>{t('hooks.scopeHint')}</div>
         </div>
 
         <div className="flex-1 overflow-auto p-4">
           {hooks.length === 0 ? (
             <div className={`text-center py-16 text-muted-foreground`}>
               <Link2 size={48} className="mx-auto mb-3 opacity-20" />
-              <p className="text-sm">{projectDir ? t('hooks.noHooks') : t('kiroConfig.selectProjectDir')}</p>
-              {projectDir && (
-                <button 
-                  onClick={() => setShowCreateModal(true)} 
-                  className={`cursor-pointer mt-4 px-4 py-2 rounded-lg text-sm transition-colors duration-200 focus:outline-none focus:ring-2 ${accent.ring} ${accentSolidButtonClass}`}
-                >
-                  {t('common.add')}
-                </button>
-              )}
+              <p className="text-sm">{t('hooks.noHooks')}</p>
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className={`cursor-pointer mt-4 px-4 py-2 rounded-lg text-sm transition-colors duration-200 focus:outline-none focus:ring-2 ${accent.ring} ${accentSolidButtonClass}`}
+              >
+                {t('common.add')}
+              </button>
             </div>
           ) : (
             <div className="space-y-3">
@@ -247,14 +292,7 @@ function HooksPanel({ onCountChange, projectDir }: any) {
       </div>
 
       <div className={`flex-1 min-h-0 flex flex-col glass-card border border-border rounded-xl overflow-hidden`}>
-        {!projectDir ? (
-          <div className={`flex-1 flex items-center justify-center text-muted-foreground`}>
-            <div className="text-center px-6">
-              <FolderOpen size={44} className="mx-auto mb-2 opacity-30" />
-              <p>{t('kiroConfig.selectProjectDir')}</p>
-            </div>
-          </div>
-        ) : selectedHook ? (
+        {selectedHook ? (
           <>
             <div className={`p-3 border-b border-border flex items-center justify-between`}>
               <div className="flex items-center gap-2">
@@ -306,19 +344,22 @@ function HooksPanel({ onCountChange, projectDir }: any) {
           accent={accent}
           accentGradientButtonClass={accentGradientButtonClass}
           existingFileNames={hooks.map(h => h.fileName)}
+          hasProjectDir={!!projectDir}
         />
       )}
     </div>
   )
 }
 
-function CreateHookModal({ onCreate, onClose, colors, t, accent, accentGradientButtonClass, existingFileNames }: any) {
+function CreateHookModal({ onCreate, onClose, colors, t, accent, accentGradientButtonClass, existingFileNames, hasProjectDir }: any) {
   const [fileName, setFileName] = useState('')
   const [creating, setCreating] = useState(false)
+  // user = ~/.kiro/hooks（Kiro IDE 1.0.182+，对所有项目生效）；project = <project>/.kiro/hooks
+  const [scope, setScope] = useState(hasProjectDir ? 'project' : 'user')
 
   const raw = fileName.trim()
-  const normalized = raw ? (raw.endsWith('.kiro.hook') ? raw : `${raw}.kiro.hook`) : ''
-  const invalidName = raw && !/^[A-Za-z0-9._-]+(\.kiro\.hook)?$/.test(raw)
+  const normalized = normalizeHookFileName(raw)
+  const invalidName = !!raw && !isValidHookFileName(raw)
   const duplicateName = normalized && existingFileNames.some((name: string) => name.toLowerCase() === normalized.toLowerCase())
   const canSubmit = !!raw && !invalidName && !duplicateName && !creating
 
@@ -326,7 +367,7 @@ function CreateHookModal({ onCreate, onClose, colors, t, accent, accentGradientB
     if (!canSubmit) return
     setCreating(true)
     try {
-      await onCreate(raw)
+      await onCreate(raw, scope)
     } finally {
       setCreating(false)
     }
@@ -367,6 +408,32 @@ function CreateHookModal({ onCreate, onClose, colors, t, accent, accentGradientB
             {!!normalized && <p className={`text-xs mt-1 text-muted-foreground`}>{t('hooks.fileNamePreview')}: {normalized}</p>}
             {invalidName && <p className="text-xs mt-1 text-red-500">{t('hooks.fileNameInvalid')}</p>}
             {duplicateName && <p className="text-xs mt-1 text-red-500">{t('hooks.fileNameDuplicate')}</p>}
+          </div>
+
+          <div>
+            <label className={`block text-xs font-medium text-muted-foreground mb-1.5`}>{t('hooks.scope') || '作用范围'}</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setScope('project')}
+                disabled={!hasProjectDir}
+                className={`flex-1 px-3 py-2 text-sm rounded-lg border transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${scope === 'project' ? 'border-primary bg-primary/10 text-foreground' : 'border-input text-muted-foreground hover:bg-muted/50'}`}
+              >
+                {t('hooks.scopeProject') || '项目级'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setScope('user')}
+                className={`flex-1 px-3 py-2 text-sm rounded-lg border transition-colors cursor-pointer ${scope === 'user' ? 'border-primary bg-primary/10 text-foreground' : 'border-input text-muted-foreground hover:bg-muted/50'}`}
+              >
+                {t('hooks.scopeUser') || '用户级'}
+              </button>
+            </div>
+            <p className={`text-xs text-muted-foreground mt-1`}>
+              {scope === 'user'
+                ? t('hooks.scopeUserHint') || '写入 ~/.kiro/hooks（Kiro IDE 1.0.182+），对所有项目生效'
+                : t('hooks.scopeProjectHint') || '写入当前项目的 .kiro/hooks'}
+            </p>
           </div>
 
           <button

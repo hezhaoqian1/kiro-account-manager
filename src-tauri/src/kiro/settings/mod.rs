@@ -2,6 +2,7 @@
 
 pub mod custom_agents;
 pub mod hooks;
+pub mod permissions;
 pub mod mcp;
 pub mod powers;
 pub mod skills;

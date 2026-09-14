@@ -33,6 +33,11 @@ export function getKiroSettings<T = any>() {
   return invoke<T>('get_kiro_settings')
 }
 
+// 用系统默认程序打开 Kiro IDE 的 settings.json（文件不存在时会先创建）
+export function openKiroSettingsFile() {
+  return invoke('open_kiro_settings_file')
+}
+
 // 设置 Kiro IDE 代理
 export function setKiroProxy(proxy: string) {
   return invoke('set_kiro_proxy', { proxy })
@@ -43,9 +48,19 @@ export function setKiroModel(model: string) {
   return invoke('set_kiro_model', { model })
 }
 
-// 设置 Kiro IDE 可信命令
-export function setKiroTrustedCommands(mode: string, customCommands: string) {
-  return invoke('set_kiro_trusted_commands', { mode, customCommands })
+// 读取 Kiro IDE 1.0 权限策略（~/.kiro/settings/permissions.yaml）
+export function getPermissions<T = any>() {
+  return invoke<T>('get_permissions')
+}
+
+// 覆盖写入 Kiro IDE 1.0 权限策略
+export function savePermissions(policy: { rules: any[]; policies?: string[] | null }) {
+  return invoke('save_permissions', { policy })
+}
+
+// 读取 IDE 1.0 已知的能力(capability)名列表，供前端下拉候选
+export function getPermissionCapabilities<T = any>() {
+  return invoke<T>('get_permission_capabilities')
 }
 
 // 设置 Kiro IDE 通知开关
@@ -56,6 +71,12 @@ export function setKiroNotification(key: string, enabled: boolean) {
 // 设置 Kiro IDE 遥测开关
 export function setKiroTelemetry(key: string, enabled: boolean) {
   return invoke('set_kiro_telemetry', { key, enabled })
+}
+
+// 设置 Kiro IDE 设置项（key 由后端白名单校验；value 为 null 时删除该键）。
+// 后端会写入 settings.json 并镜像回 app-settings.json（双向同步）。
+export function setKiroAgentSetting(key: string, value: unknown) {
+  return invoke('set_kiro_agent_setting', { key, value })
 }
 
 // ============================================================
