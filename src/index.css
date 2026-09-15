@@ -2,6 +2,10 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* 动画插件：提供 .animate-in/.animate-out、fade-in-*、zoom-in-*、slide-in-from-* 等工具类
+   （v4 通过兼容层加载 v3 风格插件，缺这一行时 shadcn 组件的过渡类全部失效） */
+@plugin "tailwindcss-animate";
+
 @theme {
   --font-sans: "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
   --color-background: var(--background);
@@ -26,6 +30,19 @@
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
+
+  /* Accordion 展开/收起：shadcn 组件以 animate-accordion-down / -up 引用 */
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+
+  @keyframes accordion-down {
+    from { height: 0; }
+    to { height: var(--radix-accordion-content-height); }
+  }
+  @keyframes accordion-up {
+    from { height: var(--radix-accordion-content-height); }
+    to { height: 0; }
+  }
 }
 
 @layer base {
@@ -277,8 +294,9 @@
 .animate-scale-in { animation: scaleIn 0.4s ease-out forwards; }
 
 /* 下面三个类此前被引用却无定义（空类），与 .no-scrollbar 同批补齐。
-   注：Tailwind v4 未注册 tailwindcss-animate，因此 shadcn 组件里的
-   animate-in / animate-out / animate-accordion-* 仍属未定义，见交付说明。 */
+   注：shadcn 组件里的 animate-in / animate-out / fade-in-* / zoom-in-* /
+   slide-in-from-* 由文件顶部的 @plugin "tailwindcss-animate" 提供；
+   animate-accordion-down / -up 由上方 @theme 里的 --animate-accordion-* 提供。 */
 
 /* 页头、侧栏菜单项：自左滑入 */
 @keyframes slideInLeft { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: translateX(0); } }
