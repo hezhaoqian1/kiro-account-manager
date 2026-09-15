@@ -19,9 +19,11 @@ import {
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeTextFile } from '@tauri-apps/plugin-fs'
 import { useDialog } from '@/contexts/DialogContext'
+import { useApp } from '@/hooks/useApp'
 import { showSuccess, showError, showWarning } from '@/utils/toast'
 
 function IdeSessionManager() {
+  const { t } = useApp()
   const { showConfirm } = useDialog()
   const [workspaces, setWorkspaces] = useState<string[]>([])
   const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(null)
@@ -63,7 +65,7 @@ function IdeSessionManager() {
       setWorkspaceSessions(prev => new Map(prev).set(workspaceHash, data))
     } catch (error) {
       console.error('Failed to load sessions:', error)
-      showError('加载会话列表失败：' + error)
+      showError(t('sessions.loadSessionListFailed', { error }))
     }
   }
 
@@ -89,7 +91,7 @@ function IdeSessionManager() {
       setWorkspaces(data)
     } catch (error) {
       console.error('Failed to load workspaces:', error)
-      showError('加载工作区失败：' + error)
+      showError(t('sessions.loadWorkspaceFailed', { error }))
     } finally {
       setLoading(false)
     }
@@ -109,7 +111,7 @@ function IdeSessionManager() {
       setSelectedSession(data)
     } catch (error) {
       console.error('Failed to load session:', error)
-      showError('加载失败：' + error)
+      showError(t('sessions.loadFailed', { error }))
     } finally {
       setLoading(false)
     }
@@ -119,8 +121,8 @@ function IdeSessionManager() {
     const workspaceName = decodeWorkspaceName(workspaceHash)
 
     const confirmed = await showConfirm(
-      '删除工作区',
-      `确定要删除工作区 "${workspaceName}" 及其所有会话吗？\n\n此操作不可恢复！`
+      t('sessions.deleteWorkspaceTitle'),
+      t('sessions.deleteWorkspaceConfirm', { name: workspaceName })
     )
 
     if (!confirmed) return
@@ -150,10 +152,10 @@ function IdeSessionManager() {
         setSelectedSession(null)
       }
 
-      showSuccess(`成功删除工作区 "${workspaceName}"`)
+      showSuccess(t('sessions.workspaceDeleted', { name: workspaceName }))
     } catch (error) {
       console.error('Failed to delete workspace:', error)
-      showError('删除工作区失败：' + error)
+      showError(t('sessions.deleteWorkspaceFailed', { error }))
     } finally {
       setLoading(false)
     }
@@ -161,8 +163,8 @@ function IdeSessionManager() {
 
   const handleDeleteSession = async (workspaceHash: string, session: SessionSummary) => {
     const confirmed = await showConfirm(
-      '删除会话',
-      `确定要删除会话 "${session.title}" 吗？`
+      t('sessions.deleteSessionTitle'),
+      t('sessions.deleteSessionConfirm', { title: session.title })
     )
 
     if (!confirmed) return
@@ -177,10 +179,10 @@ function IdeSessionManager() {
       if (selectedSession?.sessionId === session.sessionId) {
         setSelectedSession(null)
       }
-      showSuccess('会话已删除')
+      showSuccess(t('sessions.sessionDeleted'))
     } catch (error) {
       console.error('Failed to delete session:', error)
-      showError('删除失败：' + error)
+      showError(t('sessions.deleteFailed', { error }))
     }
   }
 
@@ -204,7 +206,7 @@ function IdeSessionManager() {
 
   const handleBatchDeleteWorkspaces = async () => {
     if (selectedWorkspaceHashes.size === 0) {
-      showWarning('请先选择要删除的工作区')
+      showWarning(t('sessions.pleaseSelectWorkspace'))
       return
     }
 
@@ -213,8 +215,11 @@ function IdeSessionManager() {
       .join('、')
 
     const confirmed = await showConfirm(
-      '批量删除工作区',
-      `确定要删除选中的 ${selectedWorkspaceHashes.size} 个工作区及其所有会话吗？\n\n工作区：${workspaceNames}\n\n此操作不可恢复！`
+      t('sessions.batchDeleteWorkspaceTitle'),
+      t('sessions.batchDeleteWorkspaceConfirm', {
+        count: selectedWorkspaceHashes.size,
+        names: workspaceNames
+      })
     )
 
     if (!confirmed) return
@@ -237,10 +242,10 @@ function IdeSessionManager() {
       setSelectedWorkspace(null)
       setSelectedSession(null)
 
-      showSuccess(`成功删除 ${selectedWorkspaceHashes.size} 个工作区`)
+      showSuccess(t('sessions.batchDeleteSuccess', { count: selectedWorkspaceHashes.size }))
     } catch (error) {
       console.error('Failed to batch delete workspaces:', error)
-      showError('批量删除失败：' + error)
+      showError(t('sessions.batchDeleteFailed', { error }))
     } finally {
       setLoading(false)
     }
@@ -260,7 +265,7 @@ function IdeSessionManager() {
       }
 
       if (!workspaceHash) {
-        showError('无法找到会话所属的工作区')
+        showError(t('sessions.sessionNotFound'))
         return
       }
 
@@ -283,11 +288,11 @@ function IdeSessionManager() {
 
       if (filePath) {
         await writeTextFile(filePath, content)
-        showSuccess('导出成功！')
+        showSuccess(t('sessions.exportSuccess'))
       }
     } catch (error) {
       console.error('Failed to export session:', error)
-      showError('导出失败：' + error)
+      showError(t('sessions.exportFailed', { error }))
     }
   }
 
@@ -305,7 +310,7 @@ function IdeSessionManager() {
 
   const formatDate = (timestamp?: number) => {
     if (!timestamp) return '-'
-    return new Date(timestamp * 1000).toLocaleString('zh-CN')
+    return new Date(timestamp * 1000).toLocaleString()
   }
 
   // 获取工作区的会话列表
@@ -331,21 +336,21 @@ function IdeSessionManager() {
               <MessageSquare size={21} className="relative text-primary-foreground" />
             </div>
             <div className="flex flex-col">
-              <h1 className="text-xl font-semibold tracking-tight text-foreground">会话管理</h1>
-              <p className="text-sm text-muted-foreground">浏览、搜索和导出 Kiro IDE 的历史对话</p>
+              <h1 className="text-xl font-semibold tracking-tight text-foreground">{t('sessions.title')}</h1>
+              <p className="text-sm text-muted-foreground">{t('sessions.subtitle')}</p>
             </div>
           </div>
 
           <div className="hidden items-center gap-2 md:flex">
             <Badge variant="secondary" className="h-8 rounded-full px-3 font-normal">
-              {workspaces.length} 个工作区
+              {t('sessions.workspaceCount', { count: workspaces.length })}
             </Badge>
             <Badge variant="outline" className="h-8 rounded-full px-3 font-normal bg-background/70">
-              已加载 {loadedSessionCount} 个会话
+              {t('sessions.loadedSessions', { count: loadedSessionCount })}
             </Badge>
             {selectedWorkspaceHashes.size > 0 && (
               <Badge variant="destructive" className="h-8 rounded-full px-3 font-normal">
-                已选 {selectedWorkspaceHashes.size}
+                {t('sessions.selectedCount', { count: selectedWorkspaceHashes.size })}
               </Badge>
             )}
           </div>
@@ -357,7 +362,7 @@ function IdeSessionManager() {
         <div className="w-80 shrink-0 overflow-hidden rounded-2xl border border-border/70 bg-card/80 shadow-sm backdrop-blur-xl flex flex-col">
           <div className="border-b border-border/70 bg-muted/20 p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-foreground">工作区与会话</h2>
+              <h2 className="text-sm font-semibold text-foreground">{t('sessions.workspacesAndSessions')}</h2>
               {selectedWorkspaceHashes.size > 0 && (
                 <Button
                   variant="destructive"
@@ -366,12 +371,12 @@ function IdeSessionManager() {
                   onClick={handleBatchDeleteWorkspaces}
                 >
                   <Trash2 className="h-3 w-3 mr-1" />
-                  删除 ({selectedWorkspaceHashes.size})
+                  {t('sessions.deleteCount', { count: selectedWorkspaceHashes.size })}
                 </Button>
               )}
             </div>
             <div className="flex items-center justify-between rounded-xl bg-background/70 px-3 py-2 text-[11px] text-muted-foreground ring-1 ring-border/50">
-              <span>{workspaces.length} 个工作区</span>
+              <span>{t('sessions.workspaceCount', { count: workspaces.length })}</span>
               {workspaces.length > 0 && (
                 <Button
                   variant="ghost"
@@ -379,7 +384,7 @@ function IdeSessionManager() {
                   className="h-6 rounded-full px-2 text-[11px] hover:bg-primary/10 hover:text-primary"
                   onClick={toggleSelectAllWorkspaces}
                 >
-                  {selectedWorkspaceHashes.size === workspaces.length ? '取消全选' : '全选'}
+                  {selectedWorkspaceHashes.size === workspaces.length ? t('sessions.deselectAll') : t('sessions.selectAll')}
                 </Button>
               )}
             </div>
@@ -387,7 +392,7 @@ function IdeSessionManager() {
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
-                placeholder="搜索会话..."
+                placeholder={t('sessions.searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="h-9 rounded-xl border-border/70 bg-background/80 pl-8 text-xs shadow-inner focus-visible:ring-primary/30"
@@ -402,7 +407,7 @@ function IdeSessionManager() {
                 <div className="space-y-2">
                   {filteredSessions.length === 0 ? (
                     <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-4 py-10 text-center text-sm text-muted-foreground">
-                      未找到匹配的会话
+                      {t('sessions.noMatch')}
                     </div>
                   ) : (
                     filteredSessions.map(session => {
@@ -438,7 +443,7 @@ function IdeSessionManager() {
                                 e.stopPropagation()
                                 handleDeleteSession(session.workspaceHash, session)
                               }}
-                              title="删除会话"
+                              title={t('sessions.deleteSessionTitle')}
                             >
                               <Trash2 className="h-3 w-3" />
                             </Button>
@@ -485,7 +490,7 @@ function IdeSessionManager() {
                         <button
                           onClick={() => toggleWorkspace(workspace)}
                           className={`shrink-0 rounded-lg p-1 transition-all ${selectedWorkspace === workspace ? 'text-primary hover:bg-primary/15 hover:text-primary' : 'text-muted-foreground hover:bg-background hover:text-foreground'}`}
-                          title={isExpanded ? '折叠' : '展开'}
+                          title={isExpanded ? t('sessions.collapse') : t('sessions.expand')}
                         >
                           {isExpanded ? (
                             <ChevronDown className="h-4 w-4" />
@@ -514,7 +519,7 @@ function IdeSessionManager() {
                           </div>
                           {isExpanded && sessions.length > 0 && (
                             <div className="mt-0.5 text-xs text-muted-foreground truncate">
-                              {sessions.length} 个会话
+                              {t('sessions.sessionCount', { count: sessions.length })}
                             </div>
                           )}
                         </div>
@@ -528,7 +533,7 @@ function IdeSessionManager() {
                             e.stopPropagation()
                             handleDeleteWorkspace(workspace)
                           }}
-                          title="删除工作区"
+                          title={t('sessions.deleteWorkspaceTitle')}
                         >
                           <Trash2 className="h-3 w-3" />
                         </Button>
@@ -544,7 +549,7 @@ function IdeSessionManager() {
                           </div>
                         ) : sessions.length === 0 ? (
                           <div className="rounded-xl border border-dashed border-border/60 bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
-                            暂无会话
+                            {t('sessions.noSessions')}
                           </div>
                         ) : (
                           sessions.map(session => {
@@ -573,7 +578,7 @@ function IdeSessionManager() {
                                       e.stopPropagation()
                                       handleDeleteSession(workspace, session)
                                     }}
-                                    title="删除会话"
+                                    title={t('sessions.deleteSessionTitle')}
                                   >
                                     <Trash2 className="h-3 w-3" />
                                   </Button>
@@ -607,7 +612,7 @@ function IdeSessionManager() {
             <div className="flex-1 flex items-center justify-center text-muted-foreground">
               <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-background/80 px-5 py-4 shadow-sm">
                 <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                <span className="text-sm">正在加载会话...</span>
+                <span className="text-sm">{t('sessions.loading')}</span>
               </div>
             </div>
           ) : selectedSession ? (
@@ -667,7 +672,7 @@ function IdeSessionManager() {
                           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-500/10 text-xl ring-1 ring-blue-500/20">📝</div>
                           <div className="min-w-0 flex-1">
                             <div className="mb-2 font-semibold text-blue-900 dark:text-blue-100">
-                              对话摘要（上下文压缩）
+                              {t('sessions.conversationSummary')}
                             </div>
                             <div className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-white/55 p-3 text-sm leading-6 text-blue-900 ring-1 ring-blue-200/60 dark:bg-black/20 dark:text-blue-100 dark:ring-blue-800/50">
                               {selectedSession.history[0].message.content[0].text}
@@ -680,7 +685,7 @@ function IdeSessionManager() {
                   {/* Messages */}
                   {selectedSession.history.length === 0 ? (
                     <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-6 py-14 text-center text-sm text-muted-foreground">
-                      此会话没有消息
+                      {t('sessions.noMessages')}
                     </div>
                   ) : (
                     selectedSession.history.map((item, index) => {
@@ -705,7 +710,7 @@ function IdeSessionManager() {
                             <div className="min-w-0 flex-1">
                               <div className="mb-2 flex items-center gap-2">
                                 <span className="text-sm font-semibold text-foreground">
-                                  {item.message.role === 'user' ? 'User' : 'Assistant'}
+                                  {item.message.role === 'user' ? t('sessions.user') : t('sessions.assistant')}
                                 </span>
                                 <Badge variant="outline" className="h-5 rounded-full px-2 text-[10px] font-normal">
                                   #{index + 1}
@@ -736,8 +741,8 @@ function IdeSessionManager() {
                 <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-primary/20">
                   <MessageSquare className="h-7 w-7 text-primary" />
                 </div>
-                <p className="font-medium text-foreground">选择一个会话查看详情</p>
-                <p className="mt-2 text-sm text-muted-foreground">从左侧工作区树或搜索结果中选择历史对话。</p>
+                <p className="font-medium text-foreground">{t('sessions.selectSessionToView')}</p>
+                <p className="mt-2 text-sm text-muted-foreground">{t('sessions.selectFromTree')}</p>
               </div>
             </div>
           )}
@@ -756,6 +761,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 const CliSessionManager = lazy(() => import('../CliSessionManager/index'))
 
 export default function SessionManager() {
+  const { t } = useApp()
   return (
     <Tabs defaultValue="ide" className="flex flex-col h-full">
       <TabsList className="glass-card mb-3 flex h-9 w-fit justify-start rounded-lg border-none p-0.5 no-scrollbar">
@@ -773,7 +779,7 @@ export default function SessionManager() {
         <IdeSessionManager />
       </TabsContent>
       <TabsContent value="cli" className="flex-1 min-h-0 mt-0">
-        <Suspense fallback={<div className="flex items-center justify-center h-full text-muted-foreground text-sm">加载中...</div>}>
+        <Suspense fallback={<div className="flex items-center justify-center h-full text-muted-foreground text-sm">{t('sessions.loadingCli')}</div>}>
           <CliSessionManager />
         </Suspense>
       </TabsContent>
