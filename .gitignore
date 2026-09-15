@@ -1,5 +1,9 @@
 # Dependencies
+# 本项目统一用 Bun：只提交 bun.lock，其它包管理器的锁文件一律忽略
 node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
 
 # Build
 dist/
