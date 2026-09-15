@@ -22,7 +22,13 @@ import { useDialog } from '@/contexts/DialogContext'
 import { useApp } from '@/hooks/useApp'
 import { showSuccess, showError, showWarning } from '@/utils/toast'
 
-function IdeSessionManager() {
+interface SessionCounts {
+  workspaces: number
+  loadedSessions: number
+  selected: number
+}
+
+function IdeSessionManager({ onCountsChange }: { onCountsChange?: (counts: SessionCounts) => void }) {
   const { t } = useApp()
   const { showConfirm } = useDialog()
   const [workspaces, setWorkspaces] = useState<string[]>([])
@@ -323,40 +329,19 @@ function IdeSessionManager() {
     0
   )
 
+  // 统计口径上抛给页头；页头位于 Tabs 外层，切到 CLI 标签也常驻
+  useEffect(() => {
+    onCountsChange?.({
+      workspaces: workspaces.length,
+      loadedSessions: loadedSessionCount,
+      selected: selectedWorkspaceHashes.size,
+    })
+  }, [workspaces.length, loadedSessionCount, selectedWorkspaceHashes.size, onCountsChange])
+
   const selectedSessionId = selectedSession?.sessionId
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-gradient-to-br from-background via-background to-muted/40">
-      {/* Header */}
-      <div className="border-b border-border/70 bg-card/70 px-6 py-4 shadow-sm backdrop-blur-xl">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-primary via-primary/90 to-primary/70 shadow-lg shadow-primary/20 ring-1 ring-primary/25">
-              <div className="absolute inset-0 rounded-2xl bg-white/10" />
-              <MessageSquare size={21} className="relative text-primary-foreground" />
-            </div>
-            <div className="flex flex-col">
-              <h1 className="text-xl font-semibold tracking-tight text-foreground">{t('sessions.title')}</h1>
-              <p className="text-sm text-muted-foreground">{t('sessions.subtitle')}</p>
-            </div>
-          </div>
-
-          <div className="hidden items-center gap-2 md:flex">
-            <Badge variant="secondary" className="h-8 rounded-full px-3 font-normal">
-              {t('sessions.workspaceCount', { count: workspaces.length })}
-            </Badge>
-            <Badge variant="outline" className="h-8 rounded-full px-3 font-normal bg-background/70">
-              {t('sessions.loadedSessions', { count: loadedSessionCount })}
-            </Badge>
-            {selectedWorkspaceHashes.size > 0 && (
-              <Badge variant="destructive" className="h-8 rounded-full px-3 font-normal">
-                {t('sessions.selectedCount', { count: selectedWorkspaceHashes.size })}
-              </Badge>
-            )}
-          </div>
-        </div>
-      </div>
-
+    <div className="flex h-full flex-col overflow-hidden">
       <div className="flex min-h-0 flex-1 overflow-hidden p-4 gap-4">
         {/* Left Sidebar - Workspaces with expandable sessions */}
         <div className="w-80 shrink-0 overflow-hidden rounded-2xl border border-border/70 bg-card/80 shadow-sm backdrop-blur-xl flex flex-col">
@@ -762,21 +747,59 @@ const CliSessionManager = lazy(() => import('../CliSessionManager/index'))
 
 export default function SessionManager() {
   const { t } = useApp()
+  const [tab, setTab] = useState('ide')
+  const [counts, setCounts] = useState<SessionCounts>({ workspaces: 0, loadedSessions: 0, selected: 0 })
   return (
-    <Tabs defaultValue="ide" className="flex flex-col h-full">
-      <TabsList className="glass-card mb-3 flex h-9 w-fit justify-start rounded-lg border-none p-0.5 no-scrollbar">
-        <TabsTrigger value="ide" className="gap-1.5 px-3 h-8 shrink-0 text-xs font-medium data-[state=active]:shadow-sm">
-          <MonitorSmartphone size={13} />
-          Kiro IDE
-        </TabsTrigger>
-        <TabsTrigger value="cli" className="gap-1.5 px-3 h-8 shrink-0 text-xs font-medium data-[state=active]:shadow-sm">
-          <Terminal size={13} />
-          Kiro CLI
-        </TabsTrigger>
-      </TabsList>
+    <Tabs value={tab} onValueChange={setTab} className="flex h-full flex-col overflow-hidden bg-gradient-to-br from-background via-background to-muted/40">
+      {/* 页头放在 Tabs 外层：切到 Kiro CLI 标签时标题不再消失 */}
+      <div className="shrink-0 border-b border-border/70 bg-card/70 px-6 py-4 shadow-sm backdrop-blur-xl">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-primary via-primary/90 to-primary/70 shadow-lg shadow-primary/20 ring-1 ring-primary/25">
+              <div className="absolute inset-0 rounded-2xl bg-white/10" />
+              <MessageSquare size={21} className="relative text-primary-foreground" />
+            </div>
+            <div className="flex flex-col">
+              <h1 className="text-xl font-semibold tracking-tight text-foreground">{t('sessions.title')}</h1>
+              <p className="text-sm text-muted-foreground">{t('sessions.subtitle')}</p>
+            </div>
+          </div>
+
+          {/* 统计口径来自 IDE 标签，切到 CLI 时不展示，避免误导 */}
+          {tab === 'ide' && (
+            <div className="hidden items-center gap-2 md:flex">
+              <Badge variant="secondary" className="h-8 rounded-full px-3 font-normal">
+                {t('sessions.workspaceCount', { count: counts.workspaces })}
+              </Badge>
+              <Badge variant="outline" className="h-8 rounded-full px-3 font-normal bg-background/70">
+                {t('sessions.loadedSessions', { count: counts.loadedSessions })}
+              </Badge>
+              {counts.selected > 0 && (
+                <Badge variant="destructive" className="h-8 rounded-full px-3 font-normal">
+                  {t('sessions.selectedCount', { count: counts.selected })}
+                </Badge>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 标签栏与页头左对齐（此前贴在页面最左侧，比页头内容少 24px 缩进） */}
+      <div className="shrink-0 px-6 pt-3">
+        <TabsList className="glass-card flex h-9 w-fit justify-start rounded-lg border-none p-0.5 no-scrollbar">
+          <TabsTrigger value="ide" className="gap-1.5 px-3 h-8 shrink-0 text-xs font-medium data-[state=active]:shadow-sm">
+            <MonitorSmartphone size={13} />
+            Kiro IDE
+          </TabsTrigger>
+          <TabsTrigger value="cli" className="gap-1.5 px-3 h-8 shrink-0 text-xs font-medium data-[state=active]:shadow-sm">
+            <Terminal size={13} />
+            Kiro CLI
+          </TabsTrigger>
+        </TabsList>
+      </div>
 
       <TabsContent value="ide" className="flex-1 min-h-0 mt-0">
-        <IdeSessionManager />
+        <IdeSessionManager onCountsChange={setCounts} />
       </TabsContent>
       <TabsContent value="cli" className="flex-1 min-h-0 mt-0">
         <Suspense fallback={<div className="flex items-center justify-center h-full text-muted-foreground text-sm">{t('sessions.loadingCli')}</div>}>

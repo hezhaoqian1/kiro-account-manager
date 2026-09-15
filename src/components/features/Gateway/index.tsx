@@ -486,7 +486,16 @@ function GatewayPage() {
     <GatewayConfigProvider>
       <GatewayStatusProvider>
         <GatewayDataProvider>
-          <div className={`h-full overflow-y-auto p-3 glass-main`}>
+          <div className={`h-full overflow-y-auto p-6 glass-main`}>
+            <div className="mb-4 flex items-center gap-3 animate-slide-in-left">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/80 to-primary flex items-center justify-center shadow-md ring-1 ring-primary/20 flex-shrink-0">
+                <Network size={20} className="text-primary-foreground" />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <h1 className="text-lg font-semibold text-foreground leading-tight">{t('nav.gateway')}</h1>
+                <p className="text-sm text-muted-foreground leading-tight truncate">{t('gateway.gatewayDescription')}</p>
+              </div>
+            </div>
             <Stack gap="sm">
               <Card className={`glass-card border border-border rounded-xl p-3`}>
                 <Stack gap="sm">

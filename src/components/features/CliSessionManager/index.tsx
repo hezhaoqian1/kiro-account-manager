@@ -123,7 +123,7 @@ export default function CliSessionManager() {
   }
 
   return (
-    <div className="flex h-full min-h-0 gap-3 overflow-hidden">
+    <div className="flex h-full min-h-0 gap-3 overflow-hidden p-4">
       {/* 左侧：会话列表 */}
       <div className="w-[340px] flex flex-col gap-2 shrink-0 min-h-0">
         {/* 搜索 */}
