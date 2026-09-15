@@ -8,7 +8,9 @@ pub fn get_internal_model_id(external_model: &str) -> Result<String, String> {
     // 1. 特殊别名（简写 / latest / 特殊值）
     let model_id = match normalized.as_str() {
         "auto" | "default" => return Ok("auto".to_string()),
-        "opus" | "opus-4-7" => return Ok("claude-opus-4.7".to_string()),
+        // opus 系列：裸 "opus" 指向当前最新的 Opus（5）
+        "opus" | "opus-5" | "opus-5-0" => return Ok("claude-opus-5".to_string()),
+        "opus-4-7" => return Ok("claude-opus-4.7".to_string()),
         "sonnet" | "sonnet-4-6" => return Ok("claude-sonnet-4.6".to_string()),
         "haiku" | "haiku-4-5" => return Ok("claude-haiku-4.5".to_string()),
         "claude-sonnet-latest" => return Ok("claude-sonnet-5".to_string()),

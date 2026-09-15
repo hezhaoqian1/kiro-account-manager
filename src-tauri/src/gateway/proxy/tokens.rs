@@ -362,8 +362,8 @@ pub fn estimate_generic_tokens(text: &str) -> usize {
 ///
 /// 数据来源：
 /// - Kiro 官方文档：https://kiro.dev/docs/models/
-/// - Claude Opus 4.8/4.7/4.6、Sonnet 4.6/5：1M tokens
-/// - GPT-5.6 系列：272K tokens
+/// - Claude Opus 5/4.8/4.7/4.6、Sonnet 4.6/5：1M tokens
+/// - GPT-5.6 系列：1M tokens（2026-09-14 起由 272K 升级，≤272K 与 >272K 两档计费）
 /// - 其他 Claude 4.x：200k tokens
 #[allow(dead_code)]
 pub async fn get_model_max_input_tokens(model_id: &str) -> usize {
@@ -372,6 +372,8 @@ pub async fn get_model_max_input_tokens(model_id: &str) -> usize {
     // 根据模型 ID 返回对应的 token 限制
     if model_lower == "auto" {
         1_000_000 // auto 模型支持 1M tokens
+    } else if model_lower.contains("opus-5") {
+        1_000_000 // Claude Opus 5: 1M tokens
     } else if model_lower.contains("opus-4.8") || model_lower.contains("opus-4-8") {
         1_000_000 // Claude Opus 4.8: 1M tokens
     } else if model_lower.contains("opus-4.7") || model_lower.contains("opus-4-7") {
@@ -383,7 +385,7 @@ pub async fn get_model_max_input_tokens(model_id: &str) -> usize {
     } else if model_lower.contains("sonnet-5") {
         1_000_000 // Claude Sonnet 5: 1M tokens
     } else if model_lower.contains("gpt-5.6") || model_lower.contains("gpt-5-6") {
-        272_000 // GPT-5.6 Sol/Terra/Luna: 272K tokens
+        1_000_000 // GPT-5.6 Sol/Terra/Luna: 1M tokens（2026-09-14 起，原 272K）
     } else if model_lower.contains("qwen") {
         256_000 // Qwen3 Coder Next: 256k tokens
     } else if model_lower.contains("llama") || model_lower.contains("deepseek") {

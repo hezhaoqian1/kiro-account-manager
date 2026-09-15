@@ -1,6 +1,7 @@
 import { THEME_REGISTRY } from '@/lib/themeRegistry'
 
 export const AI_MODELS = [
+  { value: 'claude-opus-5', label: 'Claude Opus 5 (1M) - 2.2x', recommended: false },
   { value: 'claude-opus-4.8', label: 'Claude Opus 4.8 (1M) - 2.2x', recommended: false },
   { value: 'claude-opus-4.7', label: 'Claude Opus 4.7 (1M) - 2.2x', recommended: false },
   { value: 'claude-opus-4.6', label: 'Claude Opus 4.6 (1M) - 2.2x', recommended: false },
@@ -10,9 +11,10 @@ export const AI_MODELS = [
   { value: 'claude-sonnet-4.5', label: 'Claude Sonnet 4.5 (200K) - 1.3x', recommended: false },
   { value: 'claude-sonnet-4', label: 'Claude Sonnet 4.0 (200K) - 1.3x', recommended: false },
   { value: 'auto', label: 'Auto (智能选择) - 1.0x', recommended: false },
-  { value: 'gpt-5.6-sol', label: 'GPT-5.6 Sol (272K) - 2.4x', recommended: false },
-  { value: 'gpt-5.6-terra', label: 'GPT-5.6 Terra (272K) - 1.2x', recommended: false },
-  { value: 'gpt-5.6-luna', label: 'GPT-5.6 Luna (272K) - 0.6x', recommended: false },
+  // GPT-5.6 已升级至 1M 上下文（原 272K），改为两档计费：≤272K 按下列短上下文费率，>272K 翻倍
+  { value: 'gpt-5.6-sol', label: 'GPT-5.6 Sol (1M) - 4.4x/8.8x', recommended: false },
+  { value: 'gpt-5.6-terra', label: 'GPT-5.6 Terra (1M) - 2.2x/4.4x', recommended: false },
+  { value: 'gpt-5.6-luna', label: 'GPT-5.6 Luna (1M) - 1.1x/2.2x', recommended: false },
   { value: 'glm-5', label: 'GLM-5 (200K) - 0.5x', recommended: false },
   { value: 'claude-haiku-4.5', label: 'Claude Haiku 4.5 (200K) - 0.4x', recommended: false },
   { value: 'deepseek-3.2', label: 'DeepSeek 3.2 (128K) - 0.25x', recommended: false },
