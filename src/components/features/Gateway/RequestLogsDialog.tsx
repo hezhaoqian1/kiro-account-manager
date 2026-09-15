@@ -276,7 +276,7 @@ export function RequestLogsDialog({
                   <strong> {(requestStats.totalOutputTokens / 1000).toFixed(1)}K</strong> {t('gatewayLogs.tokensOutput')}
                   {requestStats.totalCacheReadTokens > 0 && (
                     <span className="text-blue-500 font-medium">
-                      {t('gatewayLogs.cacheSaved', { pct: {((requestStats.totalCacheReadTokens / (requestStats.totalInputTokens + requestStats.totalCacheReadTokens)) * 100).toFixed(0)}% })}
+                      {t('gatewayLogs.cacheSaved', { pct: ((requestStats.totalCacheReadTokens / (requestStats.totalInputTokens + requestStats.totalCacheReadTokens)) * 100).toFixed(0) })}
                     </span>
                   )}
                 </div>
