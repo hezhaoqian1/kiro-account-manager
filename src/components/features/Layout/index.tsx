@@ -1,13 +1,17 @@
 
-import { useState, useEffect, ReactNode } from 'react'
+import { useState, useEffect } from 'react'
 import { getKiroLocalToken } from '../../../api/kiroApi'
 import { getVersion } from '@tauri-apps/api/app'
-import { User, Sun, Moon, Palette, ChevronLeft, ChevronRight, LucideIcon } from 'lucide-react'
+import { User, Sun, Moon, Palette, Monitor, ChevronLeft, ChevronRight, LucideIcon } from 'lucide-react'
 import { Button } from '../../ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../ui/tooltip'
 import { cn } from '../../../lib/utils'
 import { useApp } from '../../../hooks/useApp'
 import { routes } from '../../../routes'
+import { THEME_KEYS, findTheme, type ThemeIconName } from '../../../lib/themeRegistry'
+
+/** 主题图标：注册表只存图标名，组件映射留在视图层，避免 lib 依赖 React 组件 */
+const THEME_ICONS: Record<ThemeIconName, LucideIcon> = { Monitor, Sun, Moon, Palette }
 
 interface SidebarProps {
   activeMenu: string;
@@ -50,30 +54,16 @@ function Sidebar({ activeMenu, onMenuChange }: SidebarProps) {
     localStorage.setItem('sidebar-collapsed', String(newState))
   }
 
-  const themeIcons: Record<string, LucideIcon> = { 
-    light: Sun, 
-    dark: Moon, 
-    'dark-one': Moon, 
-    tech: Moon, 
-    midnight: Moon,
-    purple: Palette, 
-    green: Palette,
-    business: Palette,
-    sunset: Palette,
-    ocean: Palette,
-    forest: Palette,
-    rose: Palette,
-    theme1: Palette,
-    theme2: Palette
-  }
-  
-  const ThemeIcon = themeIcons[theme as keyof typeof themeIcons] || Sun
-  
-  const themeOrder = Object.keys(themeIcons)
+  const currentTheme = findTheme(theme)
+  const ThemeIcon = (currentTheme && THEME_ICONS[currentTheme.iconName]) || Sun
+  const themeLabel = currentTheme ? (t(currentTheme.nameKey) || currentTheme.fallbackName) : String(theme ?? '')
+
   const handleThemeClick = () => {
-    const currentIndex = themeOrder.indexOf(theme)
-    const nextIndex = (currentIndex + 1) % themeOrder.length
-    setTheme(themeOrder[nextIndex])
+    // 按注册表顺序轮转；当前主题不在表内（历史遗留 theme1/theme2）时从头开始，
+    // 避免 indexOf 得 -1 导致 (0)%len 意外跳回第一个主题
+    const currentIndex = THEME_KEYS.indexOf(theme)
+    const nextIndex = (currentIndex + 1) % THEME_KEYS.length
+    setTheme(THEME_KEYS[nextIndex])
   }
 
   return (
@@ -115,7 +105,7 @@ function Sidebar({ activeMenu, onMenuChange }: SidebarProps) {
         </Tooltip>
       </TooltipProvider>
 
-      <div className={cn("flex flex-col gap-0.5 flex-1 overflow-auto no-scrollbar", collapsed ? "px-2" : "px-2")}>
+      <div className={cn("flex flex-col gap-0.5 flex-1 overflow-auto no-scrollbar px-2")}>
         {menuItems.map((item, idx) => {
           const Icon = item.icon
           const isActive = activeMenu === item.id
@@ -199,7 +189,7 @@ function Sidebar({ activeMenu, onMenuChange }: SidebarProps) {
                 </Button>
               </TooltipTrigger>
               <TooltipContent side={collapsed ? "right" : "top"}>
-                {t(`theme.${theme}`)}
+                {themeLabel}
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>

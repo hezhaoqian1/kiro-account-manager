@@ -1,3 +1,5 @@
+import { THEME_REGISTRY } from '@/lib/themeRegistry'
+
 export const AI_MODELS = [
   { value: 'claude-opus-4.8', label: 'Claude Opus 4.8 (1M) - 2.2x', recommended: false },
   { value: 'claude-opus-4.7', label: 'Claude Opus 4.7 (1M) - 2.2x', recommended: false },
@@ -86,21 +88,11 @@ export const TELEMETRY_ROWS: { ideKey: string; label: string; field: keyof Telem
   { ideKey: 'telemetry.editStats.showStatusBar', label: 'settings.telemetryEditStatsStatusBar', field: 'telemetryEditStatsStatusBar' },
 ]
 
-export const buildThemeOptions = (t) => [
-  // 跟随系统：由 next-themes 按 prefers-color-scheme 解析为 light / dark
-  { key: 'system', name: t('settings.themeSystem') || 'Follow system', iconName: 'Monitor', color: 'from-slate-400 to-slate-600' },
-  { key: 'light', name: t('settings.light') || 'Light', iconName: 'Sun', color: 'from-blue-400 to-blue-600' },
-  { key: 'dark', name: t('settings.dark') || 'Dark', iconName: 'Moon', color: 'from-gray-700 to-gray-900' },
-  { key: 'purple', name: t('settings.purple') || 'Purple', iconName: 'Palette', color: 'from-purple-500 to-purple-700' },
-  { key: 'green', name: t('settings.green') || 'Green', iconName: 'Palette', color: 'from-emerald-500 to-emerald-700' },
-  { key: 'tech', name: t('settings.tech') || 'Tech Blue', iconName: 'Palette', color: 'from-blue-500 to-cyan-500' },
-  { key: 'dark-one', name: t('settings.darkOne') || 'Dark One', iconName: 'Moon', color: 'from-slate-700 to-gray-900' },
-  { key: 'business', name: t('settings.business') || 'Business', iconName: 'Palette', color: 'from-amber-500 to-yellow-600' },
-  { key: 'sunset', name: t('settings.sunset') || 'Sunset', iconName: 'Palette', color: 'from-orange-400 to-red-500' },
-  { key: 'ocean', name: t('settings.ocean') || 'Ocean', iconName: 'Palette', color: 'from-cyan-400 to-blue-500' },
-  { key: 'rose', name: t('settings.rose') || 'Rose', iconName: 'Palette', color: 'from-pink-400 to-rose-500' },
-  { key: 'aurora', name: t('settings.aurora') || 'Aurora', iconName: 'Palette', color: 'from-teal-400 to-emerald-500' },
-  { key: 'midnight', name: t('settings.midnight') || 'Midnight', iconName: 'Moon', color: 'from-gray-900 via-yellow-700 to-black' },
-  { key: 'forest', name: t('settings.forest') || 'Forest', iconName: 'Palette', color: 'from-green-600 to-emerald-900' },
-  { key: 'sakura', name: t('settings.sakura') || 'Sakura', iconName: 'Palette', color: 'from-pink-200 to-rose-400' },
-]
+// 主题清单统一来自 @/lib/themeRegistry，保证与 index.css 的 [data-theme=...] 一一对应
+export const buildThemeOptions = (t: (key: string) => string) =>
+  THEME_REGISTRY.map((opt) => ({
+    key: opt.key,
+    name: t(opt.nameKey) || opt.fallbackName,
+    iconName: opt.iconName,
+    color: opt.color,
+  }))
