@@ -1,4 +1,5 @@
 import { Switch } from '../../ui/switch'
+import { rowShell } from './rowStyles'
 
 interface ToggleRowProps {
   checked: boolean
@@ -11,7 +12,7 @@ interface ToggleRowProps {
  */
 function ToggleRow({ checked, onChange, label }: ToggleRowProps) {
   return (
-    <label className="flex items-center gap-2 cursor-pointer px-2.5 py-1.5 rounded-md border border-border bg-card hover:bg-muted/40 transition-colors">
+    <label className={`${rowShell('compact')} cursor-pointer`}>
       <Switch checked={checked} onCheckedChange={onChange} />
       <span className="text-xs text-foreground">{label}</span>
     </label>

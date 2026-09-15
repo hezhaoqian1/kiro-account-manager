@@ -1,5 +1,6 @@
 import type React from 'react'
 import { Switch } from '../../ui/switch'
+import { rowShell } from './rowStyles'
 
 interface SwitchRowProps {
   checked: boolean
@@ -26,7 +27,7 @@ function SwitchRow({
 }: SwitchRowProps) {
   return (
     <div
-      className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-card hover:bg-muted/40 transition-colors"
+      className={rowShell('default')}
       title={title}
     >
       <Switch checked={checked} onCheckedChange={onCheckedChange} />

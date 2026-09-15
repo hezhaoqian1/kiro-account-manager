@@ -2,6 +2,7 @@ import { Sun, Moon, Palette, Check, LayoutList, ZoomIn, Gauge, Monitor } from 'l
 import { Switch } from '@/components/ui/switch'
 import { buildThemeOptions } from './settingsConstants'
 import SectionCard from './SectionCard'
+import { rowShell } from './rowStyles'
 
 interface SettingsAppearanceProps {
   theme: string
@@ -41,6 +42,7 @@ function SettingsAppearance({ theme, setTheme, density, setDensity, uiScale, set
               <button
                 key={opt.key}
                 onClick={() => setTheme(opt.key)}
+                aria-pressed={isActive}
                 className={`group relative overflow-hidden rounded-xl border transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 ${
                   isActive
                     ? 'border-primary ring-1 ring-primary/30 shadow-md'
@@ -79,6 +81,7 @@ function SettingsAppearance({ theme, setTheme, density, setDensity, uiScale, set
               <button
                 key={opt.key}
                 onClick={() => setDensity(opt.key)}
+                aria-pressed={isActive}
                 className={`group relative overflow-hidden rounded-xl border transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 ${
                   isActive
                     ? 'border-primary ring-1 ring-primary/30 shadow-md'
@@ -112,6 +115,7 @@ function SettingsAppearance({ theme, setTheme, density, setDensity, uiScale, set
               <button
                 key={scale}
                 onClick={() => setUiScale(scale)}
+                aria-pressed={isActive}
                 className={`group relative overflow-hidden rounded-xl border transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 ${
                   isActive
                     ? 'border-primary ring-1 ring-primary/30 shadow-md'
@@ -133,7 +137,7 @@ function SettingsAppearance({ theme, setTheme, density, setDensity, uiScale, set
         icon={<Gauge size={14} className="text-amber-500" />}
         desc={t('settings.reduceMotionDesc')}
       >
-        <div className="flex items-center justify-between p-2.5 rounded-lg border border-border bg-muted/30">
+        <div className={`${rowShell('default')} justify-between`}>
           <span className="text-sm">{t('settings.reduceMotionLabel')}</span>
           <Switch checked={!!reduceMotion} onCheckedChange={(checked: boolean) => setReduceMotion(checked)} />
         </div>

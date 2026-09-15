@@ -16,6 +16,7 @@ import { useDialog } from '../../../contexts/DialogContext'
 import SectionCard from './SectionCard'
 import SwitchRow from './SwitchRow'
 import ToggleRow from './ToggleRow'
+import { rowShell } from './rowStyles'
 import KiroAgentAdvancedPanel from './KiroAgentAdvancedPanel'
 import PermissionsPanel from './PermissionsPanel'
 
@@ -341,6 +342,7 @@ function SettingsKiro({
                 disabled={detectingProxy}
                 className="px-2.5 h-8 border rounded-md bg-card hover:bg-muted/50 border-border text-foreground transition-colors disabled:opacity-50 inline-flex items-center justify-center cursor-pointer"
                 title={t('settings.detectProxyTitle')}
+                aria-label={t('settings.detectProxyTitle')}
               >
                 {detectingProxy ? <RefreshCw size={12} className="animate-spin" /> : <Search size={12} />}
               </button>
@@ -359,7 +361,7 @@ function SettingsKiro({
             </div>
           </div>
 
-          <div className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border bg-card">
+          <div className={rowShell('default')}>
             <div className="min-w-0">
               <span className="text-sm font-medium text-foreground whitespace-nowrap">{t('settings.appProxyMode')}</span>
               <p className="text-[11px] text-muted-foreground mt-0.5">{t('settings.appProxyModeDesc')}</p>

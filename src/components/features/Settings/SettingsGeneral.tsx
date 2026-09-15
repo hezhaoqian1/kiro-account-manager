@@ -5,6 +5,7 @@ import React from 'react'
 import { TFunction } from 'i18next'
 import SectionCard from './SectionCard'
 import SwitchRow from './SwitchRow'
+import { rowShell } from './rowStyles'
 import { useI18n } from '../../../hooks/useI18n'
 
 interface BrowserInfo {
@@ -233,7 +234,7 @@ function SettingsGeneral({
 
           {/* 切换目标：手动切换/退出登录时作用到哪一侧（样式对齐 SwitchRow） */}
           <div
-            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-card hover:bg-muted/40 transition-colors"
+            className={rowShell('default')}
             title={t('settings.switchTargetDesc')}
           >
             <span className="text-muted-foreground flex items-center"><Target size={14} /></span>
@@ -284,6 +285,7 @@ function SettingsGeneral({
               onClick={handleDetectBrowsers}
               className="px-2.5 h-8 border rounded-md bg-card hover:bg-muted/50 border-border text-foreground transition-colors"
               title={t('settings.detectBrowsersTitle')}
+              aria-label={t('settings.detectBrowsersTitle')}
             >
               <Search size={13} />
             </button>
@@ -309,8 +311,8 @@ function SettingsGeneral({
                   {t('settings.close')}
                 </button>
               </div>
-              {detectedBrowsers.map((browser, index) => (
-                <div key={index} className="flex items-center justify-between p-1.5 rounded bg-card border border-border hover:bg-muted/50 transition-colors">
+              {detectedBrowsers.map((browser) => (
+                <div key={browser.path} className="flex items-center justify-between p-1.5 rounded bg-card border border-border hover:bg-muted/50 transition-colors">
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-medium">{browser.name}</div>
                     <div className="text-[10px] text-muted-foreground truncate">{browser.path}</div>
@@ -342,6 +344,7 @@ function SettingsGeneral({
               onClick={handleBrowseKiroPath}
               className="px-2.5 h-8 border rounded-md bg-card hover:bg-muted/50 border-border text-foreground transition-colors"
               title={t('settings.browse')}
+              aria-label={t('settings.browse')}
             >
               <Search size={13} />
             </button>
@@ -350,6 +353,7 @@ function SettingsGeneral({
                 onClick={handleClearKiroPath}
                 className="px-2.5 h-8 border rounded-md bg-card hover:bg-red-500/10 border-border text-red-500 transition-colors"
                 title={t('settings.clear')}
+                aria-label={t('settings.clear')}
               >
                 <X size={13} />
               </button>
@@ -375,6 +379,7 @@ function SettingsGeneral({
                 onClick={() => copyToClipboard(appDataDir, 'appDataDir')}
                 className="p-1.5 rounded border border-border hover:bg-muted/50 transition-colors flex-shrink-0"
                 title={t('settings.copyPath')}
+                aria-label={t('settings.copyPath')}
               >
                 {copiedField === 'appDataDir' ? <Check size={13} className="text-green-500" /> : <Copy size={13} className="text-muted-foreground" />}
               </button>
@@ -384,6 +389,7 @@ function SettingsGeneral({
               disabled={!appDataDir}
               className="h-8 w-8 rounded-md flex items-center justify-center bg-primary hover:bg-primary/90 text-primary-foreground disabled:opacity-50 transition-colors flex-shrink-0"
               title={t('settings.openInExplorer')}
+              aria-label={t('settings.openInExplorer')}
             >
               <ExternalLink size={13} />
             </button>
@@ -412,6 +418,7 @@ function SettingsGeneral({
                 onClick={() => copyToClipboard(systemMachineInfo.machineGuid, 'sysMachineGuid')}
                 className="p-1.5 rounded border border-border hover:bg-muted/50 transition-colors flex-shrink-0"
                 title={t('common.copy')}
+                aria-label={t('common.copy')}
               >
                 {copiedField === 'sysMachineGuid' ? <Check size={13} className="text-green-500" /> : <Copy size={13} className="text-muted-foreground" />}
               </button>

@@ -1,10 +1,3 @@
-export const resolveOsLabel = (osType, fallbackLabel) => {
-  if (osType === 'windows') return 'Windows'
-  if (osType === 'macos') return 'macOS'
-  if (osType === 'linux') return 'Linux'
-  return osType || fallbackLabel
-}
-
 export const isValidProxy = (url) => {
   if (!url) return true
   try {

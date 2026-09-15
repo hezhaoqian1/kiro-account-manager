@@ -81,9 +81,6 @@ function Settings() {
     // 关闭窗口行为
     const [closeToTray, setCloseToTray] = useState(false)
 
-    // Kiro IDE 状态
-    const [, setLoading] = useState(false)
-
     // 系统机器码
     const [systemMachineInfo, setSystemMachineInfo] = useState<any>(null)
     const [machineGuidAction, setMachineGuidAction] = useState<string | null>(null) // 'reset'
@@ -93,7 +90,6 @@ function Settings() {
 
     // 加载设置（指纹延迟加载，不阻塞页面）
     const loadSettings = useCallback(async () => {
-        setLoading(true)
         try {
             // 先加载核心设置（快速）
             const [kiroSettings, appSettings, sysMachine, kiroPath, ideInfo, dataDir] = await Promise.all([
@@ -161,8 +157,6 @@ function Settings() {
             }
         } catch (err) {
             console.error('Failed to load settings:', err)
-        } finally {
-            setLoading(false)
         }
     }, [])
 
@@ -256,7 +250,8 @@ function Settings() {
     const handleCloseToTrayChange = makeAppBoolToggle(setCloseToTray, 'closeToTray', saveAppSettings)
     const switchTarget = settings?.switchTarget || 'ide'
     const handleSwitchTargetChange = (value: string) => {
-        updateSettings({ switchTarget: value })
+        // Select 的候选值就是这三个，收窄回联合类型以匹配 updateSettings 的签名
+        updateSettings({ switchTarget: value as 'ide' | 'cli' | 'both' })
     }
 
     const handleBrowseKiroPath = async () => {
@@ -396,6 +391,9 @@ function Settings() {
             await showSuccess(t('settings.resetSuccess'), `${t('settings.newMachineGuid')}: ${newGuid}`)
         } catch (err: any) {
             await showError(t('settings.resetFailed'), err.toString())
+        } finally {
+            // 成败都要复位：否则成功路径下 machineGuidAction 一直为 'reset'，
+            // 按钮永久 disabled、转圈不停（须刷新页面才能再点）
             setMachineGuidAction(null)
         }
     }

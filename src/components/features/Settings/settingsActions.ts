@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 
-export const buildSettingsErrorMessage = (t, err, titleKey = 'settings.saveFailed') => {
+const buildSettingsErrorMessage = (t, err, titleKey = 'settings.saveFailed') => {
   const title = t(titleKey)
   return {
     title,
