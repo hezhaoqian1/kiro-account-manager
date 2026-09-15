@@ -20,9 +20,11 @@ import {
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeTextFile } from '@tauri-apps/plugin-fs'
 import { useDialog } from '@/contexts/DialogContext'
+import { useApp } from '@/hooks/useApp'
 import { showSuccess, showError } from '@/utils/toast'
 
 export default function CliSessionManager() {
+  const { t } = useApp()
   const { showConfirm } = useDialog()
   const [sessions, setSessions] = useState<CliSessionSummary[]>([])
   const [selectedSession, setSelectedSession] = useState<CliSession | null>(null)
@@ -40,7 +42,7 @@ export default function CliSessionManager() {
       setSessions(data)
     } catch (error) {
       console.error('Failed to load CLI sessions:', error)
-      showError('加载 CLI 会话失败：' + error)
+      showError(t('cliSessions.loadListFailed', { error }))
     } finally {
       setLoading(false)
     }
@@ -64,7 +66,7 @@ export default function CliSessionManager() {
       const full = await cliSessionApi.loadSession(summary.sessionId)
       setSelectedSession(full)
     } catch (error) {
-      showError('加载会话详情失败：' + error)
+      showError(t('cliSessions.loadDetailFailed', { error }))
     } finally {
       setLoading(false)
     }
@@ -72,8 +74,8 @@ export default function CliSessionManager() {
 
   const handleDelete = async (sessionId: string) => {
     const confirmed = await showConfirm(
-      '确定要删除这个 CLI 会话吗？此操作不可恢复。',
-      '删除会话'
+      t('cliSessions.deleteTitle'),
+      t('cliSessions.deleteConfirm')
     )
     if (!confirmed) return
     try {
@@ -82,9 +84,9 @@ export default function CliSessionManager() {
       if (selectedSession?.sessionId === sessionId) {
         setSelectedSession(null)
       }
-      showSuccess('会话已删除')
+      showSuccess(t('cliSessions.deleted'))
     } catch (error) {
-      showError('删除失败：' + error)
+      showError(t('cliSessions.deleteFailed', { error }))
     }
   }
 
@@ -98,10 +100,10 @@ export default function CliSessionManager() {
       })
       if (path) {
         await writeTextFile(path, content)
-        showSuccess(`已导出到 ${path}`)
+        showSuccess(t('cliSessions.exported', { path }))
       }
     } catch (error) {
-      showError('导出失败：' + error)
+      showError(t('cliSessions.exportFailed', { error }))
     }
   }
 
@@ -109,7 +111,7 @@ export default function CliSessionManager() {
     if (!isoStr) return ''
     try {
       const date = new Date(isoStr)
-      return !isNaN(date.getTime()) ? date.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : isoStr
+      return !isNaN(date.getTime()) ? date.toLocaleString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : isoStr
     } catch {
       return isoStr
     }
@@ -130,7 +132,7 @@ export default function CliSessionManager() {
           <Input
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            placeholder="搜索会话..."
+            placeholder={t('cliSessions.searchPlaceholder')}
             className="h-8 pl-8 text-xs"
           />
         </div>
@@ -138,7 +140,7 @@ export default function CliSessionManager() {
         {/* 统计 */}
         <div className="flex items-center gap-2 px-1 text-[11px] text-muted-foreground">
           <Terminal size={12} />
-          <span>{filteredSessions.length} 个 CLI 会话</span>
+          <span>{t('cliSessions.count', { count: filteredSessions.length })}</span>
           {loading && <Loader2 size={12} className="animate-spin ml-auto" />}
         </div>
 
@@ -220,7 +222,7 @@ export default function CliSessionManager() {
                   )}
                   {selectedSession.contextUsage && (
                     <span className="text-[9px] text-muted-foreground">
-                      上下文: {selectedSession.contextUsage.toFixed(1)}%
+                      {t('cliSessions.context', { pct: selectedSession.contextUsage.toFixed(1) })}
                     </span>
                   )}
                 </div>
@@ -262,11 +264,11 @@ export default function CliSessionManager() {
                     <div className="flex items-center gap-1.5 mb-1.5 text-[10px] text-muted-foreground">
                       {msg.kind === 'Prompt' ? (
                         <>
-                          <span className="font-medium text-primary">👤 User</span>
+                          <span className="font-medium text-primary">👤 {t('cliSessions.user')}</span>
                         </>
                       ) : (
                         <>
-                          <span className="font-medium text-emerald-600">🤖 Assistant</span>
+                          <span className="font-medium text-emerald-600">🤖 {t('cliSessions.assistant')}</span>
                         </>
                       )}
                       {msg.data.meta?.timestamp && (
@@ -290,7 +292,7 @@ export default function CliSessionManager() {
           <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
             <div className="text-center">
               <Terminal size={32} className="mx-auto mb-2 opacity-30" />
-              <p>选择一个 CLI 会话查看详情</p>
+              <p>{t('cliSessions.selectToView')}</p>
             </div>
           </div>
         )}
