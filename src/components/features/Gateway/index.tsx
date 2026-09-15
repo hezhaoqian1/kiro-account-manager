@@ -488,7 +488,7 @@ function GatewayPage() {
                 <Stack gap="sm">
                   <Group justify="space-between" align="center">
                     <Group gap="xs">
-                      <Text fw={700} className="text-foreground text-base">Kiro2API </Text>
+                      <Text fw={700} className="text-foreground text-base">{t('gateway.kiroApiReverseProxy')}</Text>
                       {!status.running ? (
                         <Button
                           size="sm"
