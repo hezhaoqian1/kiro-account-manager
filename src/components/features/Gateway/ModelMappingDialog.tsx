@@ -14,6 +14,7 @@ import {
   DialogBody
 } from '@/components/shared/dialog'
 import { toast } from 'sonner'
+import { useApp } from '@/hooks/useApp'
 import { getAvailableModels } from '../../../api/gatewayApi'
 import { ModelMappingRule } from './gatewayPageState'
 
@@ -81,6 +82,7 @@ interface ModelMappingDialogProps {
 }
 
 export function ModelMappingDialog({ open, onOpenChange, modelMappings, setField, onSave }: ModelMappingDialogProps) {
+  const { t } = useApp()
   const rules = modelMappings || []
 
   const [newSourceModel, setNewSourceModel] = useState('')
@@ -95,7 +97,7 @@ export function ModelMappingDialog({ open, onOpenChange, modelMappings, setField
         .then(models => setTargetModels(models))
         .catch(err => {
           console.error('获取可用模型失败:', err)
-          toast.error('获取可用模型列表失败')
+          toast.error(t('gatewayMapping.fetchModelsFailed'))
         })
     }
   }, [open])
@@ -140,7 +142,7 @@ export function ModelMappingDialog({ open, onOpenChange, modelMappings, setField
     setNewSourceModel('')
     setNewTargetModel('')
     setNewRuleType('replace')
-    toast.success(`已添加映射规则: ${newRule.name}`)
+    toast.success(t('gatewayMapping.addedRule', { name: newRule.name }))
   }
 
   const handlePreset = () => {
@@ -158,9 +160,9 @@ export function ModelMappingDialog({ open, onOpenChange, modelMappings, setField
       }))
     if (newRules.length > 0) {
       setField('modelMappings', [...rules, ...newRules])
-      toast.success(`成功载入 ${newRules.length} 条预置映射规则`)
+      toast.success(t('gatewayMapping.presetLoaded', { count: newRules.length }))
     } else {
-      toast.info('所有预置映射规则均已存在')
+      toast.info(t('gatewayMapping.presetExists'))
     }
   }
 
@@ -168,10 +170,8 @@ export function ModelMappingDialog({ open, onOpenChange, modelMappings, setField
     <DialogRoot open={open} onOpenChange={handleOpenChange}>
       <DialogContent maxWidth="720px">
         <DialogHeader>
-          <DialogTitle>模型映射规则</DialogTitle>
-          <DialogDescription>
-            客户端请求的模型名会根据规则映射到 Kiro 内部模型
-          </DialogDescription>
+          <DialogTitle>{t('gatewayMapping.title')}</DialogTitle>
+          <DialogDescription>{t('gatewayMapping.description')}</DialogDescription>
         </DialogHeader>
 
         <DialogBody className="pt-2">
@@ -179,7 +179,7 @@ export function ModelMappingDialog({ open, onOpenChange, modelMappings, setField
           <div className="border rounded-lg overflow-hidden max-h-[300px] overflow-y-auto">
             {rules.length === 0 ? (
               <div className="p-6 text-center text-sm text-muted-foreground">
-                暂无规则
+                {t('gatewayMapping.empty')}
               </div>
             ) : (
               rules.map((rule: any, idx: number) => (
@@ -193,7 +193,7 @@ export function ModelMappingDialog({ open, onOpenChange, modelMappings, setField
                     <div className="flex items-center gap-1.5">
                       <span className="text-sm font-medium truncate">{rule.name || rule.sourceModel}</span>
                       <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                        {rule.ruleType === 'replace' ? '替换' : rule.ruleType === 'alias' ? '别名' : '负载均衡'}
+                        {rule.ruleType === 'replace' ? t('gatewayMapping.ruleReplace') : rule.ruleType === 'alias' ? t('gatewayMapping.ruleAlias') : t('gatewayMapping.ruleLoadBalance')}
                       </Badge>
                     </div>
                     <div className="text-xs text-muted-foreground font-mono truncate mt-0.5">
@@ -213,13 +213,13 @@ export function ModelMappingDialog({ open, onOpenChange, modelMappings, setField
             )}
           </div>
 
-          {/* 添加新规则 */}
+          {/* {t('gatewayMapping.addNewRule')} */}
           <div className="space-y-2 p-3 border rounded-lg bg-muted/10">
-            <div className="text-xs font-medium text-muted-foreground">添加新规则</div>
+            <div className="text-xs font-medium text-muted-foreground">{t('gatewayMapping.addNewRule')}</div>
             <div className="grid grid-cols-2 gap-2">
               <div className="relative">
                 <Input
-                  placeholder="源模型名"
+                  placeholder={t('gatewayMapping.sourcePlaceholder')}
                   className="text-xs"
                   value={newSourceModel}
                   onChange={(e) => setNewSourceModel(e.target.value)}
@@ -231,7 +231,7 @@ export function ModelMappingDialog({ open, onOpenChange, modelMappings, setField
               </div>
               <div className="relative">
                 <Input
-                  placeholder="目标模型名"
+                  placeholder={t('gatewayMapping.targetPlaceholder')}
                   className="text-xs"
                   value={newTargetModel}
                   onChange={(e) => setNewTargetModel(e.target.value)}
@@ -248,8 +248,8 @@ export function ModelMappingDialog({ open, onOpenChange, modelMappings, setField
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="replace">替换 (replace)</SelectItem>
-                  <SelectItem value="alias">别名 (alias)</SelectItem>
+                  <SelectItem value="replace">{t('gatewayMapping.typeReplace')}</SelectItem>
+                  <SelectItem value="alias">{t('gatewayMapping.typeAlias')}</SelectItem>
                 </SelectContent>
               </Select>
               <Button
@@ -259,17 +259,17 @@ export function ModelMappingDialog({ open, onOpenChange, modelMappings, setField
                 disabled={!newSourceModel.trim() || !newTargetModel.trim()}
               >
                 <Plus size={14} className="mr-1" />
-                添加
+                {t('gatewayMapping.add')}
               </Button>
             </div>
           </div>
 
           {/* 预置规则 */}
           <div className="flex items-center justify-between pt-1">
-            <div className="text-xs text-muted-foreground">快速添加 OpenAI/Codex 兼容映射</div>
+            <div className="text-xs text-muted-foreground">{t('gatewayMapping.presetTitle')}</div>
             <Button size="sm" variant="outline" className="h-7 text-xs" onClick={handlePreset}>
               <Zap size={12} className="mr-1" />
-              预置 GPT 映射
+              {t('gatewayMapping.presetButton')}
             </Button>
           </div>
         </DialogBody>

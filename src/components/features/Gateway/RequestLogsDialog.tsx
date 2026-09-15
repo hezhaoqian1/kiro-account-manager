@@ -34,6 +34,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { useApp } from '@/hooks/useApp'
 
 interface ProcessedRequestLog {
   id: string
@@ -108,6 +109,7 @@ export function RequestLogsDialog({
   onLogRequestsChange,
   onSave
 }: RequestLogsDialogProps) {
+  const { t } = useApp()
   const [requestLogs, setRequestLogs] = useState<ProcessedRequestLog[]>([])
   const [requestStats, setRequestStats] = useState<GatewayRequestStats | null>(null)
   const [cacheStats, setCacheStats] = useState<CacheStats | null>(null)
@@ -175,9 +177,9 @@ export function RequestLogsDialog({
     try {
       await clearAllCache()
       setCacheStats(prev => prev ? { ...prev, delta_cache_size: 0, lru_cache_size: 0 } : null)
-      toast.success('系统缓存已清理')
+      toast.success(t('gatewayLogs.toastCacheCleared'))
     } catch (err) {
-      toast.error(`清理缓存失败: ${err}`)
+      toast.error(t('gatewayLogs.toastClearCacheFailed', { error: String(err) }))
     }
   }
 
@@ -192,9 +194,9 @@ export function RequestLogsDialog({
       setRequestLogs([])
       setRequestStats(null)
       setClearConfirm(false)
-      toast.success('网关日志已清空')
+      toast.success(t('gatewayLogs.toastLogsCleared'))
     } catch (err) {
-      toast.error(`清空失败: ${err}`)
+      toast.error(t('gatewayLogs.toastClearFailed', { error: String(err) }))
     }
   }
 
@@ -209,17 +211,17 @@ export function RequestLogsDialog({
     a.download = `gateway-logs-${new Date().toISOString().replace(/[:.]/g, '-')}.log`
     a.click()
     URL.revokeObjectURL(url)
-    toast.success('日志导出成功')
+    toast.success(t('gatewayLogs.toastExported'))
   }
 
   const handleCopyPayload = async (text: string, id: string) => {
     try {
       await navigator.clipboard.writeText(text)
       setCopiedPayloadId(id)
-      toast.success('Payload 已复制')
+      toast.success(t('gatewayLogs.toastPayloadCopied'))
       setTimeout(() => setCopiedPayloadId(null), 1500)
     } catch {
-      toast.error('复制失败')
+      toast.error(t('gatewayLogs.toastCopyFailed'))
     }
   }
 
@@ -249,9 +251,9 @@ export function RequestLogsDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Activity className="w-5 h-5 text-primary" />
-            请求日志监控
+            {t('gatewayLogs.title')}
           </DialogTitle>
-          <DialogDescription>实时查看网关请求记录、本地缓存命中与流量统计</DialogDescription>
+          <DialogDescription>{t('gatewayLogs.description')}</DialogDescription>
         </DialogHeader>
 
         <DialogBody className="space-y-3 flex flex-col min-h-0">
@@ -259,22 +261,22 @@ export function RequestLogsDialog({
           <div className="flex items-center justify-between gap-2 bg-muted/20 p-2.5 rounded-lg flex-wrap">
             <div className="flex items-center gap-3 flex-wrap">
               <div className="flex items-center gap-1.5 text-xs">
-                <span className="text-muted-foreground">总计</span>
+                <span className="text-muted-foreground">{t('gatewayLogs.total')}</span>
                 <span className="font-semibold">{requestStats?.total || 0}</span>
-                <span className="text-green-600 border-l pl-2 ml-1">成功</span>
+                <span className="text-green-600 border-l pl-2 ml-1">{t('gatewayLogs.success')}</span>
                 <span className="font-semibold text-green-600">{requestStats?.success || 0}</span>
-                <span className="text-red-500 border-l pl-2 ml-1">错误</span>
+                <span className="text-red-500 border-l pl-2 ml-1">{t('gatewayLogs.error')}</span>
                 <span className="font-semibold text-red-500">{requestStats?.error || 0}</span>
               </div>
 
               {requestStats && requestStats.totalInputTokens > 0 && (
                 <div className="text-xs text-muted-foreground border-l pl-3 ml-1">
                   <span>Tokens: </span>
-                  <strong>{(requestStats.totalInputTokens / 1000).toFixed(1)}K</strong> 入 /
-                  <strong> {(requestStats.totalOutputTokens / 1000).toFixed(1)}K</strong> 出
+                  <strong>{(requestStats.totalInputTokens / 1000).toFixed(1)}K</strong> {t('gatewayLogs.tokensInput')} /
+                  <strong> {(requestStats.totalOutputTokens / 1000).toFixed(1)}K</strong> {t('gatewayLogs.tokensOutput')}
                   {requestStats.totalCacheReadTokens > 0 && (
                     <span className="text-blue-500 font-medium">
-                      （节省 {((requestStats.totalCacheReadTokens / (requestStats.totalInputTokens + requestStats.totalCacheReadTokens)) * 100).toFixed(0)}% 输入缓存）
+                      {t('gatewayLogs.cacheSaved', { pct: {((requestStats.totalCacheReadTokens / (requestStats.totalInputTokens + requestStats.totalCacheReadTokens)) * 100).toFixed(0)}% })}
                     </span>
                   )}
                 </div>
@@ -283,7 +285,7 @@ export function RequestLogsDialog({
               {cacheStats && (
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground border-l pl-3 ml-1">
                   <Database size={11} className="text-blue-500" />
-                  <span>缓存: <strong>{cacheStats.lru_cache_size + cacheStats.delta_cache_size}</strong> 项 (Delta: {cacheStats.delta_cache_size} / LRU: {cacheStats.lru_cache_size})</span>
+                  <span>{t('gatewayLogs.cacheLabel')} <strong>{cacheStats.lru_cache_size + cacheStats.delta_cache_size}</strong> {t('gatewayLogs.cacheItems', { delta: cacheStats.delta_cache_size, lru: cacheStats.lru_cache_size })}</span>
                 </div>
               )}
             </div>
@@ -292,7 +294,7 @@ export function RequestLogsDialog({
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1.5">
                 <Switch size="sm" checked={logRequests} onCheckedChange={onLogRequestsChange} />
-                <span className="text-xs text-muted-foreground">记录日志</span>
+                <span className="text-xs text-muted-foreground">{t('gatewayLogs.logRequests')}</span>
               </div>
 
               {cacheStats && (
@@ -303,7 +305,7 @@ export function RequestLogsDialog({
                   className="h-6 text-[10px] text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/20 px-1.5 gap-1 font-normal"
                 >
                   <Database size={10} />
-                  清理缓存
+                  {t('gatewayLogs.clearCache')}
                 </Button>
               )}
             </div>
@@ -314,7 +316,7 @@ export function RequestLogsDialog({
             <div className="flex items-center gap-2 flex-1 min-w-[200px]">
               <div className="relative flex-1 max-w-xs">
                 <Input
-                  placeholder="搜索账号、模型、路径、上游或响应码..."
+                  placeholder={t('gatewayLogs.searchPlaceholder')}
                   className="h-8 text-xs pl-7"
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
@@ -327,9 +329,9 @@ export function RequestLogsDialog({
                 value={activeFilter}
                 onChange={(e) => setActiveFilter(e.target.value as any)}
               >
-                <option value="all">全部响应码</option>
-                <option value="success">成功响应 (2xx/3xx)</option>
-                <option value="error">错误响应 (4xx/5xx)</option>
+                <option value="all">{t('gatewayLogs.filterAll')}</option>
+                <option value="success">{t('gatewayLogs.filterSuccess')}</option>
+                <option value="error">{t('gatewayLogs.filterError')}</option>
               </select>
 
               <select
@@ -337,9 +339,9 @@ export function RequestLogsDialog({
                 value={displayLimit}
                 onChange={(e) => { setDisplayLimit(Number(e.target.value)) }}
               >
-                <option value={50}>保留最新 50 条</option>
-                <option value={100}>保留最新 100 条</option>
-                <option value={200}>保留最新 200 条</option>
+                <option value={50}>{t('gatewayLogs.keepLatest50')}</option>
+                <option value={100}>{t('gatewayLogs.keepLatest100')}</option>
+                <option value={200}>{t('gatewayLogs.keepLatest200')}</option>
               </select>
             </div>
 
@@ -349,12 +351,12 @@ export function RequestLogsDialog({
                 className="text-xs border rounded bg-background px-2 h-8 text-muted-foreground outline-none hover:border-primary/50 cursor-pointer transition-colors mr-1"
                 value={logLevel}
                 onChange={(e) => onLogLevelChange(e.target.value)}
-                title="网关日志级别"
+                title={t('gatewayLogs.logLevelTitle')}
               >
-                <option value="debug">Debug 级别</option>
-                <option value="info">Info 级别</option>
-                <option value="warn">Warn 级别</option>
-                <option value="error">Error 级别</option>
+                <option value="debug">{t('gatewayLogs.levelDebug')}</option>
+                <option value="info">{t('gatewayLogs.levelInfo')}</option>
+                <option value="warn">{t('gatewayLogs.levelWarn')}</option>
+                <option value="error">{t('gatewayLogs.levelError')}</option>
               </select>
 
               <Button
@@ -362,10 +364,10 @@ export function RequestLogsDialog({
                 size="sm"
                 className="h-8 px-2 gap-1 text-xs"
                 onClick={() => openGatewayLogDir()}
-                title="打开本地日志文件夹"
+                title={t('gatewayLogs.openLogDirTitle')}
               >
                 <FolderOpen size={12} />
-                日志目录
+                {t('gatewayLogs.logDir')}
               </Button>
 
               <Button
@@ -374,10 +376,10 @@ export function RequestLogsDialog({
                 className="h-8 px-2 gap-1 text-xs"
                 onClick={handleExport}
                 disabled={filteredLogs.length === 0}
-                title="导出为日志文本文件"
+                title={t('gatewayLogs.exportTitle')}
               >
                 <Download size={12} />
-                导出
+                {t('gatewayLogs.export')}
               </Button>
 
               <Button
@@ -391,7 +393,7 @@ export function RequestLogsDialog({
                 disabled={requestLogs.length === 0}
               >
                 <Trash2 size={12} className="mr-1 inline-block" />
-                {clearConfirm ? '确定清空？' : '清空'}
+                {clearConfirm ? t('gatewayLogs.confirmClear') : t('gatewayLogs.clear')}
               </Button>
 
               <Button
@@ -413,23 +415,23 @@ export function RequestLogsDialog({
                 <thead className="sticky top-0 bg-muted/95 backdrop-blur z-10">
                   <tr className="border-b shadow-[0_1px_0_0_rgba(0,0,0,0.1)]">
                     <th className="px-2 py-2 text-left w-[10px] font-sans"></th>
-                    <th className="px-2 py-2 text-left w-[100px] font-sans">发生时间</th>
-                    <th className="px-2 py-2 text-left w-[100px] font-sans">接口路径</th>
-                    <th className="px-2 py-2 text-left w-[140px] font-sans">账号</th>
-                    <th className="px-2 py-2 text-left w-[150px] font-sans">目标模型</th>
-                    <th className="px-2 py-2 text-center w-[50px] font-sans" title="HTTP 响应状态码">响应码</th>
-                    <th className="px-2 py-2 text-center w-[50px] font-sans">输入</th>
-                    <th className="px-2 py-2 text-center w-[50px] font-sans">输出</th>
-                    <th className="px-2 py-2 text-center w-[50px] font-sans" title="缓存命中 tokens">缓存读</th>
-                    <th className="px-2 py-2 text-center w-[50px] font-sans" title="缓存存入 tokens">缓存写</th>
-                    <th className="px-2 py-2 text-center w-[50px] font-sans">耗时</th>
+                    <th className="px-2 py-2 text-left w-[100px] font-sans">{t('gatewayLogs.colTime')}</th>
+                    <th className="px-2 py-2 text-left w-[100px] font-sans">{t('gatewayLogs.colPath')}</th>
+                    <th className="px-2 py-2 text-left w-[140px] font-sans">{t('gatewayLogs.colAccount')}</th>
+                    <th className="px-2 py-2 text-left w-[150px] font-sans">{t('gatewayLogs.colModel')}</th>
+                    <th className="px-2 py-2 text-center w-[50px] font-sans" title={t('gatewayLogs.colStatusTitle')}>{t('gatewayLogs.colStatus')}</th>
+                    <th className="px-2 py-2 text-center w-[50px] font-sans">{t('gatewayLogs.colInput')}</th>
+                    <th className="px-2 py-2 text-center w-[50px] font-sans">{t('gatewayLogs.colOutput')}</th>
+                    <th className="px-2 py-2 text-center w-[50px] font-sans" title={t('gatewayLogs.colCacheReadTitle')}>{t('gatewayLogs.colCacheRead')}</th>
+                    <th className="px-2 py-2 text-center w-[50px] font-sans" title={t('gatewayLogs.colCacheWriteTitle')}>{t('gatewayLogs.colCacheWrite')}</th>
+                    <th className="px-2 py-2 text-center w-[50px] font-sans">{t('gatewayLogs.colDuration')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredLogs.length === 0 ? (
                     <tr>
                       <td colSpan={11} className="text-center py-16 text-muted-foreground font-sans text-sm">
-                        {requestLogs.length === 0 ? '等待接收网关流量中...' : '未找到匹配的请求日志'}
+                        {requestLogs.length === 0 ? t('gatewayLogs.waitingTraffic') : t('gatewayLogs.noMatch')}
                       </td>
                     </tr>
                   ) : (
@@ -449,7 +451,7 @@ export function RequestLogsDialog({
                             </td>
                             <td className="px-2 py-2 text-muted-foreground whitespace-nowrap">{log.timestamp}</td>
                             <td className="px-2 py-2 text-muted-foreground font-semibold truncate max-w-[140px]" title={log.path}>
-                              {log.outcome?.includes('cache') && <span className="text-blue-500 mr-1" title="缓存命中">⚡</span>}
+                              {log.outcome?.includes('cache') && <span className="text-blue-500 mr-1" title={t('gatewayLogs.cacheHitTitle')}>⚡</span>}
                               {log.path}
                             </td>
                             <td className="px-2 py-2 truncate max-w-[140px] text-muted-foreground" title={log.upstream || '-'}>
@@ -467,12 +469,12 @@ export function RequestLogsDialog({
                               )}>
                                 {log.status}
                               </span>
-                              {log.stream && <span className="ml-1 text-blue-400 font-semibold" title="流式响应">⇣</span>}
+                              {log.stream && <span className="ml-1 text-blue-400 font-semibold" title={t('gatewayLogs.streamingTitle')}>⇣</span>}
                             </td>
                             <td className="px-2 py-2 text-right text-muted-foreground">{log.inputTokens?.toLocaleString() || '-'}</td>
                             <td className="px-2 py-2 text-right text-muted-foreground">{log.outputTokens?.toLocaleString() || '-'}</td>
-                            <td className="px-2 py-2 text-right text-blue-500 font-medium" title="缓存读取 tokens">{log.cacheReadTokens?.toLocaleString() || '-'}</td>
-                            <td className="px-2 py-2 text-right text-purple-500 font-medium" title="缓存写入 tokens">{log.cacheCreationTokens?.toLocaleString() || '-'}</td>
+                            <td className="px-2 py-2 text-right text-blue-500 font-medium" title={t('gatewayLogs.colCacheReadTitle')}>{log.cacheReadTokens?.toLocaleString() || '-'}</td>
+                            <td className="px-2 py-2 text-right text-purple-500 font-medium" title={t('gatewayLogs.colCacheWriteTitle')}>{log.cacheCreationTokens?.toLocaleString() || '-'}</td>
                             <td className="px-2 py-2 text-right">
                               <span className={log.duration > 5000 ? 'text-orange-500 font-bold' : log.duration > 2000 ? 'text-yellow-600 font-medium' : 'text-muted-foreground'}>
                                 {log.duration}ms
@@ -496,7 +498,7 @@ export function RequestLogsDialog({
                                     {/* 请求体 */}
                                     <div className="space-y-1">
                                       <div className="flex items-center justify-between text-xs text-muted-foreground font-semibold">
-                                        <span>请求 Payload (Request Body)</span>
+                                        <span>{t('gatewayLogs.requestPayload')}</span>
                                         {log.requestBody && (
                                           <Button
                                             variant="ghost"
@@ -508,7 +510,7 @@ export function RequestLogsDialog({
                                             }}
                                           >
                                             {copiedPayloadId === 'req-' + log.id ? <Check size={10} className="text-green-600" /> : <Copy size={10} />}
-                                            复制
+                                            {t('gatewayLogs.copy')}
                                           </Button>
                                         )}
                                       </div>
@@ -520,7 +522,7 @@ export function RequestLogsDialog({
                                     {/* 响应体 */}
                                     <div className="space-y-1">
                                       <div className="flex items-center justify-between text-xs text-muted-foreground font-semibold">
-                                        <span>EventStream 解码日志 (Decoded EventStream)</span>
+                                        <span>{t('gatewayLogs.responsePayload')}</span>
                                         {log.responseBody && (
                                           <Button
                                             variant="ghost"
@@ -532,7 +534,7 @@ export function RequestLogsDialog({
                                             }}
                                           >
                                             {copiedPayloadId === 'resp-' + log.id ? <Check size={10} className="text-green-600" /> : <Copy size={10} />}
-                                            复制
+                                            {t('gatewayLogs.copy')}
                                           </Button>
                                         )}
                                       </div>

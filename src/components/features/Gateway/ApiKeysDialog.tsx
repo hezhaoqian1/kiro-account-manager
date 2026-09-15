@@ -13,6 +13,7 @@ import {
   DialogFooter
 } from '@/components/shared/dialog'
 import { cn } from '@/lib/utils'
+import { useApp } from '@/hooks/useApp'
 import { toast } from 'sonner'
 import { GatewayConfig } from './gatewayPageState'
 import { useDialog } from '@/contexts/DialogContext'
@@ -65,6 +66,7 @@ const maskApiKey = (key: string) =>
   key.length > 16 ? `${key.substring(0, 7)}${'•'.repeat(8)}${key.slice(-4)}` : key
 
 export function ApiKeysDialog({ open, onOpenChange, clientApiKeysText, setConfig, onSave }: ApiKeysDialogProps) {
+  const { t } = useApp()
   const { showConfirm } = useDialog()
   const [localKeys, setLocalKeys] = useState<ApiKeyItem[]>([])
   const [hasInitialized, setHasInitialized] = useState(false)
@@ -106,7 +108,7 @@ export function ApiKeysDialog({ open, onOpenChange, clientApiKeysText, setConfig
     const idx = localKeys.length + 1
     const next = [...localKeys, { name: `Key ${idx}`, key: createApiKey(), enabled: true }]
     commitKeys(next)
-    toast.success('已生成 API Key')
+    toast.success(t('gatewayKeys.generated'))
   }
 
   const addKey = () => {
@@ -116,7 +118,7 @@ export function ApiKeysDialog({ open, onOpenChange, clientApiKeysText, setConfig
     commitKeys(next)
     setEditingIdx(next.length - 1)
     setEditingKey(key)
-    toast.success('已添加，可直接编辑')
+    toast.success(t('gatewayKeys.addedEditable'))
   }
 
   const startEdit = (idx: number) => {
@@ -132,26 +134,26 @@ export function ApiKeysDialog({ open, onOpenChange, clientApiKeysText, setConfig
   }
 
   const handleDelete = async (idx: number) => {
-    const confirmed = await showConfirm('确定删除这个 API Key？', '删除 Key')
+    const confirmed = await showConfirm(t('gatewayKeys.deleteConfirmMessage'), t('gatewayKeys.deleteConfirmTitle'))
     if (!confirmed) return
     commitKeys(localKeys.filter((_, i) => i !== idx))
-    toast.success('已删除')
+    toast.success(t('gatewayKeys.deleted'))
   }
 
   const handleCopy = async (keyText: string, idx: number) => {
     try {
       await navigator.clipboard.writeText(keyText)
       setCopiedIdx(idx)
-      toast.success('已复制到剪贴板')
+      toast.success(t('gatewayKeys.copied'))
       setTimeout(() => setCopiedIdx(null), 1500)
     } catch {
-      toast.error('复制失败')
+      toast.error(t('gatewayKeys.copyFailed'))
     }
   }
 
   const toggleAll = (enabled: boolean) => {
     commitKeys(localKeys.map(k => ({ ...k, enabled })))
-    toast.success(enabled ? '已全部启用' : '已全部禁用')
+    toast.success(enabled ? t('gatewayKeys.enableAllDone') : t('gatewayKeys.disableAllDone'))
   }
 
   const handleSave = () => {
@@ -176,9 +178,9 @@ export function ApiKeysDialog({ open, onOpenChange, clientApiKeysText, setConfig
     <DialogRoot open={open} onOpenChange={(v) => { if (!v) handleCancel() }}>
       <DialogContent maxWidth="800px" className="max-h-[85vh]">
         <DialogHeader>
-          <DialogTitle>客户端 API Keys</DialogTitle>
+          <DialogTitle>{t('gatewayKeys.title')}</DialogTitle>
           <DialogDescription>
-            管理客户端认证密钥。已启用 {enabledCount}/{localKeys.length} 个。
+            {t('gatewayKeys.description', { enabled: enabledCount, total: localKeys.length })}
           </DialogDescription>
         </DialogHeader>
 
@@ -186,17 +188,17 @@ export function ApiKeysDialog({ open, onOpenChange, clientApiKeysText, setConfig
           {/* 工具栏 */}
           <div className="flex items-center gap-2">
             <Button size="sm" variant="default" onClick={generateKey} className="h-8 text-xs gap-1.5">
-              <Dice6 size={13} /> 随机生成
+              <Dice6 size={13} /> {t('gatewayKeys.generate')}
             </Button>
             <Button size="sm" variant="outline" onClick={addKey} className="h-8 text-xs gap-1.5">
-              <Plus size={13} /> 手动添加
+              <Plus size={13} /> {t('gatewayKeys.addManually')}
             </Button>
             <div className="ml-auto flex gap-1">
               <Button size="sm" variant="ghost" onClick={() => toggleAll(true)} className="h-7 text-[10px] gap-1" disabled={localKeys.length === 0}>
-                <ToggleRight size={12} /> 全部启用
+                <ToggleRight size={12} /> {t('gatewayKeys.enableAll')}
               </Button>
               <Button size="sm" variant="ghost" onClick={() => toggleAll(false)} className="h-7 text-[10px] gap-1" disabled={localKeys.length === 0}>
-                <ToggleLeft size={12} /> 全部禁用
+                <ToggleLeft size={12} /> {t('gatewayKeys.disableAll')}
               </Button>
             </div>
           </div>
@@ -205,16 +207,16 @@ export function ApiKeysDialog({ open, onOpenChange, clientApiKeysText, setConfig
           <div className="border rounded-lg overflow-hidden max-h-[400px] overflow-y-auto">
             {localKeys.length === 0 ? (
               <div className="p-8 text-center text-sm text-muted-foreground">
-                暂无 API Key，点击"随机生成"创建
+                {t('gatewayKeys.emptyHint')}
               </div>
             ) : (
               <table className="w-full text-xs">
                 <thead className="bg-muted/30 sticky top-0">
                   <tr>
-                    <th className="p-2 text-left font-medium w-10">启用</th>
-                    <th className="p-2 text-left font-medium w-28">名称</th>
-                    <th className="p-2 text-left font-medium">Key</th>
-                    <th className="p-2 text-right font-medium w-24">操作</th>
+                    <th className="p-2 text-left font-medium w-10">{t('gatewayKeys.colEnabled')}</th>
+                    <th className="p-2 text-left font-medium w-28">{t('gatewayKeys.colName')}</th>
+                    <th className="p-2 text-left font-medium">{t('gatewayKeys.colKey')}</th>
+                    <th className="p-2 text-right font-medium w-24">{t('gatewayKeys.colActions')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -237,7 +239,7 @@ export function ApiKeysDialog({ open, onOpenChange, clientApiKeysText, setConfig
                           value={item.name}
                           onChange={(e) => patchKey(idx, { name: e.target.value })}
                           className="h-7 text-xs"
-                          placeholder="可选名称"
+                          placeholder={t('gatewayKeys.namePlaceholder')}
                         />
                       </td>
                       <td className="p-2">
@@ -284,8 +286,8 @@ export function ApiKeysDialog({ open, onOpenChange, clientApiKeysText, setConfig
         </DialogBody>
 
         <DialogFooter>
-          <Button variant="outline" onClick={handleCancel}>取消</Button>
-          <Button onClick={handleSave}>保存</Button>
+          <Button variant="outline" onClick={handleCancel}>{t('gatewayKeys.cancel')}</Button>
+          <Button onClick={handleSave}>{t('gatewayKeys.save')}</Button>
         </DialogFooter>
       </DialogContent>
     </DialogRoot>
