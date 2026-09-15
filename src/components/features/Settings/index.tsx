@@ -234,11 +234,13 @@ function Settings() {
 
     const handleAutoSwitchEnabledChange = makeAppBoolToggle(setAutoSwitchEnabled, 'autoSwitchEnabled', saveAppSettings, true)
 
-    const handleAutoSwitchThresholdChange = async (value: any) => {
+    const handleAutoSwitchThresholdChange = async (value: string | number) => {
+        // 空输入/非法值不落盘：此前 `parseFloat('') || 0` 会把阈值静默写成 0，
+        // 效果等同于「额度降到 0 才换号」。保留上一个有效值（受控输入会回填）。
         const parsedValue = typeof value === 'number' ? value : parseFloat(value)
-        const threshold = Number.isFinite(parsedValue) ? parsedValue : 1
-        setAutoSwitchThreshold(threshold)
-        await saveAppSettings({ autoSwitchThreshold: threshold }, true)
+        if (!Number.isFinite(parsedValue) || parsedValue < 0) return
+        setAutoSwitchThreshold(parsedValue)
+        await saveAppSettings({ autoSwitchThreshold: parsedValue }, true)
     }
 
     const handleAutoSwitchIntervalChange = async (value: string) => {

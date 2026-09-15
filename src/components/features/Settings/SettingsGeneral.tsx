@@ -52,7 +52,7 @@ interface SettingsGeneralProps {
   handleAutoRefreshChange: (checked: boolean) => void;
   handleAutoRefreshIntervalChange: (value: string) => void;
   handleAutoSwitchEnabledChange: (checked: boolean) => void;
-  handleAutoSwitchThresholdChange: (value: number) => void;
+  handleAutoSwitchThresholdChange: (value: string | number) => void;
   handleAutoSwitchIntervalChange: (value: string) => void;
   handleSwitchTargetChange: (value: string) => void;
   handleCloseToTrayChange: (checked: boolean) => void;
@@ -213,7 +213,7 @@ function SettingsGeneral({
               <Input
                 type="number"
                 value={autoSwitchThreshold}
-                onChange={(e) => handleAutoSwitchThresholdChange(parseFloat(e.target.value) || 0)}
+                onChange={(e) => handleAutoSwitchThresholdChange(e.target.value)}
                 min={0}
                 step={0.1}
                 className="h-7 w-20 text-center text-xs"
