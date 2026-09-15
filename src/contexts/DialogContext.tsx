@@ -2,6 +2,11 @@ import { createContext, useContext, useState, useCallback, useMemo } from 'react
 import ConfirmModal from '../components/features/AccountManager/ConfirmModal'
 import UpdateDialog from '../components/shared/UpdateDialog'
 
+interface ConfirmOptions {
+  confirmText?: string
+  cancelText?: string
+}
+
 const DialogContext = createContext(null)
 
 /**
@@ -14,7 +19,7 @@ export function DialogProvider({ children }) {
   const [updateDialog, setUpdateDialog] = useState(null)
 
   // 显示确认弹窗，返回 Promise<boolean>
-  const showConfirm = useCallback((title, message, options = {}) => {
+  const showConfirm = useCallback((title, message, options: ConfirmOptions = {}) => {
     return new Promise((resolve) => {
       setResolveRef(() => resolve)
       setDialog({
