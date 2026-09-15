@@ -123,9 +123,9 @@ export default function CliSessionManager() {
   }
 
   return (
-    <div className="flex h-full gap-3">
+    <div className="flex h-full min-h-0 gap-3 overflow-hidden">
       {/* 左侧：会话列表 */}
-      <div className="w-[340px] flex flex-col gap-2 shrink-0">
+      <div className="w-[340px] flex flex-col gap-2 shrink-0 min-h-0">
         {/* 搜索 */}
         <div className="relative">
           <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
@@ -206,7 +206,7 @@ export default function CliSessionManager() {
       </div>
 
       {/* 右侧：会话详情 */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {selectedSession ? (
           <>
             {/* 头部 */}

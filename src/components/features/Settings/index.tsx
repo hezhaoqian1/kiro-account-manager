@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { getKiroSettings, getAppSettings, getCustomKiroPath, checkIdeInstallation, getAppDataDir, setKiroProxy, setKiroModel, setCustomKiroPath, clearCustomKiroPath, detectInstalledBrowsers, detectSystemProxy, openAppDataDir, openKiroSettingsFile, setKiroNotification, setKiroTelemetry } from '../../../api/settingsApi'
+import { getKiroSettings, getAppSettings, getCustomKiroPath, checkIdeInstallation, getAppDataDir, setKiroProxy, setKiroModel, clearCustomKiroPath, detectInstalledBrowsers, detectSystemProxy, openAppDataDir, openKiroSettingsFile, setKiroNotification, setKiroTelemetry } from '../../../api/settingsApi'
 import { getSystemMachineGuid, resetSystemMachineGuid, restartAsAdmin } from '../../../api/kiroApi'
 import { emit } from '@tauri-apps/api/event'
 import { Palette, Settings as SettingsIcon, LayoutDashboard, Cpu, FileJson } from 'lucide-react'
