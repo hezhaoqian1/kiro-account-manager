@@ -275,6 +275,30 @@
 .animate-float { animation: floatIcon 4s ease-in-out infinite; }
 .animate-bounce-in { animation: bounceIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
 .animate-scale-in { animation: scaleIn 0.4s ease-out forwards; }
+
+/* 下面三个类此前被引用却无定义（空类），与 .no-scrollbar 同批补齐。
+   注：Tailwind v4 未注册 tailwindcss-animate，因此 shadcn 组件里的
+   animate-in / animate-out / animate-accordion-* 仍属未定义，见交付说明。 */
+
+/* 页头、侧栏菜单项：自左滑入 */
+@keyframes slideInLeft { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: translateX(0); } }
+.animate-slide-in-left { animation: slideInLeft 0.4s ease-out both; }
+
+/* 淡入：分页条、弹窗遮罩 */
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.animate-fade-in { animation: fadeIn 0.3s ease-out both; }
+
+/* 账号列表逐项错落入场（上限 8 档，避免长列表末尾等待过久） */
+@keyframes staggerIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.animate-stagger { animation: staggerIn 0.35s ease-out both; }
+.animate-stagger:nth-child(1) { animation-delay: 0ms; }
+.animate-stagger:nth-child(2) { animation-delay: 40ms; }
+.animate-stagger:nth-child(3) { animation-delay: 80ms; }
+.animate-stagger:nth-child(4) { animation-delay: 120ms; }
+.animate-stagger:nth-child(5) { animation-delay: 160ms; }
+.animate-stagger:nth-child(6) { animation-delay: 200ms; }
+.animate-stagger:nth-child(7) { animation-delay: 240ms; }
+.animate-stagger:nth-child(n+8) { animation-delay: 280ms; }
 .stat-number { font-feature-settings: "tnum"; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
 
 /* ===== 列表密度（由 <html data-density> 驱动）=====

@@ -232,7 +232,6 @@ const DialogBody = React.forwardRef<HTMLDivElement, DialogBodyProps>(({
         gapClasses[gap],
         className
       )}
-      style={{ scrollbarWidth: 'thin' }}
       {...props}
     />
   )
