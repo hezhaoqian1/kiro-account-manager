@@ -251,6 +251,14 @@
 ::-webkit-scrollbar-thumb:hover { background: rgb(var(--primary-rgb) / 0.4); }
 ::-webkit-scrollbar-track { background: transparent; }
 
+/* 隐藏滚动条但保留滚动能力。
+   此前该工具类被 6 处引用却全项目无定义（纯空类）：
+   sidebar 导航、Settings/KiroConfig/SessionManager 的 TabsList、
+   账号表格容器、共享 dialog 正文都指望它隐藏滚动条，实际却露出了滚动条。
+   （`custom-scrollbar` 不在此列——它在 FilterDropdown 内联 <style> 里自行定义。） */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; width: 0; height: 0; }
+
 /* 动画定义 */
 @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes float { from { transform: translate(0, 0); } to { transform: translate(30px, 30px); } }
