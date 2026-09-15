@@ -436,10 +436,10 @@ function Settings() {
     }
 
     return (
-        <div className="h-full glass-main p-6 overflow-auto">
-            <div className="w-full relative">
+        <div className="h-full glass-main p-6 flex flex-col min-h-0">
+            <div className="w-full relative flex-1 flex flex-col min-h-0">
                 {/* Header（紧凑 + 装饰 ring）*/}
-                <div className="mb-4 flex items-center gap-3 animate-slide-in-left">
+                <div className="mb-4 flex items-center gap-3 animate-slide-in-left shrink-0">
                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/80 to-primary flex items-center justify-center shadow-md ring-1 ring-primary/20">
                         <SettingsIcon size={20} className="text-primary-foreground" />
                     </div>
@@ -449,8 +449,8 @@ function Settings() {
                     </div>
                 </div>
 
-                <Tabs value={activeTab} onValueChange={setActiveTab}>
-                    <TabsList className="glass-card mb-4 flex h-10 w-full justify-start overflow-x-auto rounded-lg border-none p-0.5 no-scrollbar lg:w-fit">
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
+                    <TabsList className="glass-card mb-4 flex h-10 w-full justify-start overflow-x-auto rounded-lg border-none p-0.5 no-scrollbar lg:w-fit shrink-0">
                         <TabsTrigger value="general" className="gap-1.5 px-3 h-9 shrink-0 text-sm font-medium data-[state=active]:shadow-sm">
                             <LayoutDashboard size={14} />
                             {t('settings.general')}
@@ -465,6 +465,8 @@ function Settings() {
                         </TabsTrigger>
                     </TabsList>
 
+                    {/* 仅内容区滚动：标题与标签栏固定，不随内容一起滚 */}
+                    <div className="flex-1 min-h-0 overflow-y-auto pr-1">
                     <TabsContent value="general">
                         <SettingsGeneral
                             autoRefresh={autoRefresh}
@@ -564,6 +566,7 @@ function Settings() {
                             t={t}
                         />
                     </TabsContent>
+                    </div>
                 </Tabs>
             </div>
         </div>
