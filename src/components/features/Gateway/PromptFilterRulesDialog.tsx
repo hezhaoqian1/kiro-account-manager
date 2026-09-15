@@ -23,37 +23,37 @@ import { PromptFilterRule } from './gatewayPageState'
 // 预置过滤规则
 const PRESET_RULES = [
   {
-    name: '过滤 Git 状态信息',
+    nameKey: 'gateway.presetFilterGitStatus',
     ruleType: 'lines-containing',
     matchPattern: 'git status',
     replace: ''
   },
   {
-    name: '过滤最近提交信息',
+    nameKey: 'gateway.presetFilterRecentCommits',
     ruleType: 'lines-containing',
     matchPattern: 'Recent commits:',
     replace: ''
   },
   {
-    name: '过滤助手知识截止日期',
+    nameKey: 'gateway.presetFilterKnowledgeCutoff',
     ruleType: 'lines-containing',
     matchPattern: 'Assistant knowledge cutoff',
     replace: ''
   },
   {
-    name: '过滤计费头信息',
+    nameKey: 'gateway.presetFilterBillingHeader',
     ruleType: 'lines-containing',
     matchPattern: 'x-anthropic-billing-header:',
     replace: ''
   },
   {
-    name: '过滤快速模式标签',
+    nameKey: 'gateway.presetFilterFastMode',
     ruleType: 'regex',
     matchPattern: '<fast_mode_info>.*?</fast_mode_info>',
     replace: ''
   },
   {
-    name: '过滤项目路径信息',
+    nameKey: 'gateway.presetFilterProjectPath',
     ruleType: 'lines-containing',
     matchPattern: '.claude/projects/',
     replace: ''
@@ -112,7 +112,7 @@ function PromptFilterRulesDialog({ open, onOpenChange, promptFilterRules, setFie
     setNewRuleName('')
     setNewMatchPattern('')
     setNewReplace('')
-    toast.success(`已添加过滤规则: ${newRule.name}`)
+    toast.success(t('gateway.filterRuleAdded', { name: newRule.name }))
   }
 
   const handlePreset = () => {
@@ -121,7 +121,7 @@ function PromptFilterRulesDialog({ open, onOpenChange, promptFilterRules, setFie
       .filter(p => !existingPatterns.has(p.matchPattern))
       .map(p => ({
         id: crypto.randomUUID(),
-        name: p.name,
+        name: t(p.nameKey),
         enabled: true,
         ruleType: p.ruleType,
         matchPattern: p.matchPattern,
@@ -129,9 +129,9 @@ function PromptFilterRulesDialog({ open, onOpenChange, promptFilterRules, setFie
       }))
     if (newRules.length > 0) {
       setField('promptFilterRules', [...rules, ...newRules])
-      toast.success(`成功载入 ${newRules.length} 条预置过滤规则`)
+      toast.success(t('gateway.presetRulesLoaded', { count: newRules.length }))
     } else {
-      toast.info('所有预置规则均已存在')
+      toast.info(t('gateway.allPresetRulesExist'))
     }
   }
 
@@ -198,45 +198,45 @@ function PromptFilterRulesDialog({ open, onOpenChange, promptFilterRules, setFie
 
           {/* 添加新规则 */}
           <div className="space-y-3 border rounded-lg p-4 bg-muted/10">
-            <Label className="text-sm font-medium">添加新规则</Label>
+            <Label className="text-sm font-medium">{t('gateway.newRuleSection')}</Label>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">规则名称</Label>
+                <Label className="text-xs text-muted-foreground">{t('gateway.ruleName')}</Label>
                 <Input
                   value={newRuleName}
                   onChange={(e) => setNewRuleName(e.target.value)}
-                  placeholder="例如：过滤 Git 状态"
+                  placeholder={t('gateway.ruleNamePlaceholder')}
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">规则类型</Label>
+                <Label className="text-xs text-muted-foreground">{t('gateway.ruleType')}</Label>
                 <Select value={newRuleType} onValueChange={setNewRuleType}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="lines-containing">包含关键字（删除匹配行）</SelectItem>
-                    <SelectItem value="regex">正则表达式（替换匹配内容）</SelectItem>
+                    <SelectItem value="lines-containing">{t('gateway.ruleTypeLinesContaining')}</SelectItem>
+                    <SelectItem value="regex">{t('gateway.ruleTypeRegex')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">匹配模式</Label>
+              <Label className="text-xs text-muted-foreground">{t('gateway.matchPattern')}</Label>
               <Textarea
                 value={newMatchPattern}
                 onChange={(e) => setNewMatchPattern(e.target.value)}
-                placeholder="关键字模式：git status&#10;正则模式：&lt;fast_mode_info&gt;.*?&lt;/fast_mode_info&gt;"
+                placeholder={t('gateway.matchPatternPlaceholder')}
                 rows={2}
                 className="font-mono text-xs"
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">替换内容（仅正则类型，留空表示删除）</Label>
+              <Label className="text-xs text-muted-foreground">{t('gateway.replaceContentRegexEmpty')}</Label>
               <Input
                 value={newReplace}
                 onChange={(e) => setNewReplace(e.target.value)}
-                placeholder="留空表示删除匹配内容"
+                placeholder={t('gateway.replacePlaceholderEmpty')}
                 className="font-mono text-xs"
                 disabled={newRuleType !== 'regex'}
               />

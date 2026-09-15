@@ -207,21 +207,25 @@ function GatewayPage() {
 
   const consoleHighlights = useMemo(() => ([
     {
-      label: '当前入口',
+      id: 'current-entry',
+      label: t('gateway.currentEntry'),
       value: effectiveBaseUrl
     },
     {
-      label: '客户端 Key',
+      id: 'client-key',
+      label: t('gateway.clientKey'),
       value: effectiveSecuritySummary.apiKeyState
     },
     {
-      label: '路由模式',
+      id: 'routing-mode',
+      label: t('gateway.routingMode'),
       value: effectiveRoutingSummary.modeLabel
     },
   ]), [
     effectiveBaseUrl,
     effectiveSecuritySummary.apiKeyState,
     effectiveRoutingSummary.modeLabel,
+    t,
   ])
 
   const pollingFallbackConfig = useMemo(
@@ -330,7 +334,7 @@ function GatewayPage() {
     if (!hasFieldErrors) {
       return false
     }
-    pushError('请先修正表单错误后再继续')
+    pushError(t('gateway.fixFormErrors'))
     return true
   }
 
@@ -497,7 +501,7 @@ function GatewayPage() {
                           className="bg-green-500 hover:bg-green-600 text-white h-7 px-2.5 text-xs"
                         >
                           <Play size={12} className="mr-1" />
-                          启动
+                          {t('gateway.start')}
                         </Button>
                       ) : (
                         <Button
@@ -507,10 +511,10 @@ function GatewayPage() {
                           className="bg-red-500 hover:bg-red-600 text-white h-7 px-2.5 text-xs"
                         >
                           <Square size={12} className="mr-1" />
-                          停止
+                          {t('gateway.stop')}
                         </Button>
                       )}
-                      <Badge color={status.running ? 'green' : 'gray'}>{status.running ? '运行中' : '已停止'}</Badge>
+                      <Badge color={status.running ? 'green' : 'gray'}>{status.running ? t('gateway.running') : t('gateway.stopped')}</Badge>
                     </Group>
                     <Group gap="xs">
                       <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs" onClick={() => setShowRequestLogs(true)} disabled={!status.running}>
@@ -530,20 +534,20 @@ function GatewayPage() {
 
                   <div className="grid grid-cols-3 gap-2">
                     {consoleHighlights.map((item) => (
-                      <div key={item.label} className="border rounded-lg p-2 group relative">
+                      <div key={item.id} className="border rounded-lg p-2 group relative">
                         <Text size="xs" className={"text-muted-foreground"}>{item.label}</Text>
                         <div className="flex items-center gap-2">
                           <Text fw={700} className={"text-foreground text-sm flex-1 truncate"}>{item.value}</Text>
-                          {(item.label === '当前入口' || item.label === '客户端 Key') && (
+                          {(item.id === 'current-entry' || item.id === 'client-key') && (
                             <Button
                               size="sm"
                               variant="ghost"
                               className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
                               onClick={() => {
-                                const text = item.label === '当前入口'
+                                const text = item.id === 'current-entry'
                                   ? effectiveBaseUrl
                                   : (effectiveConfig.clientApiKeysText || effectiveConfig.apiKey || '').split('\n')[0]?.trim()
-                                copyText(text, `已复制${item.label}`)
+                                copyText(text, t('gateway.copiedItem', { label: item.label }))
                               }}
                             >
                               <Copy size={12} className="text-muted-foreground" />

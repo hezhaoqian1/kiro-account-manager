@@ -79,13 +79,13 @@ const DEFAULT_REQUESTS: Record<Protocol, any> = {
   }
 }
 
-const QUICK_TEMPLATES: Record<string, { label: string; getRequest: (protocol: Protocol) => any }> = {
+const QUICK_TEMPLATES: Record<string, { labelKey: string; getRequest: (protocol: Protocol) => any }> = {
   'simple': {
-    label: '简单对话',
+    labelKey: 'gateway.tplSimple',
     getRequest: (protocol: Protocol) => DEFAULT_REQUESTS[protocol]
   },
   'multi-turn': {
-    label: '多轮对话',
+    labelKey: 'gateway.tplMultiTurn',
     getRequest: (protocol: Protocol) => {
       const base = DEFAULT_REQUESTS[protocol]
       if (protocol === 'openai-responses') {
@@ -109,7 +109,7 @@ const QUICK_TEMPLATES: Record<string, { label: string; getRequest: (protocol: Pr
     }
   },
   'non-stream': {
-    label: '非流式',
+    labelKey: 'gateway.tplNonStream',
     getRequest: (protocol: Protocol) => ({
       ...DEFAULT_REQUESTS[protocol],
       stream: false
@@ -171,14 +171,14 @@ export function ApiPlaygroundDialog({
   }, [accounts, routing])
 
   const routingHint = useMemo(() => {
-    if (!routing) return '自动（按网关负载均衡）'
+    if (!routing) return t('gateway.routingAuto')
     switch (routing.accountMode) {
       case 'single':
-        return '单账号模式'
+        return t('gateway.routingSingle')
       case 'group':
-        return '分组模式'
+        return t('gateway.routingGroup')
       case 'pool':
-        return `账号池 (${routing.poolAccountIds?.length || 0})`
+        return t('gateway.routingPool', { count: routing.poolAccountIds?.length || 0 })
       default:
         return routing.accountMode
     }
@@ -207,7 +207,7 @@ export function ApiPlaygroundDialog({
       setRequestBody(JSON.stringify(parsed, null, 2))
       setError('')
     } catch (e: any) {
-      setError(`JSON 格式错误: ${e.message}`)
+      setError(t('gateway.jsonFormatError', { message: e.message }))
     }
   }
 
@@ -293,7 +293,7 @@ export function ApiPlaygroundDialog({
         setResponse(JSON.stringify(json, null, 2))
       }
     } catch (e: any) {
-      setError(`请求失败: ${e.message}`)
+      setError(t('gateway.requestFailed', { message: e.message }))
     } finally {
       setLoading(false)
     }
@@ -320,7 +320,7 @@ export function ApiPlaygroundDialog({
             <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 items-end">
               {/* 协议选择 */}
               <div className="space-y-1.5">
-                <Label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">协议</Label>
+                <Label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{t('gateway.protocol')}</Label>
                 <Select value={protocol} onValueChange={(value) => handleProtocolChange(value as Protocol)}>
                   <SelectTrigger className="h-9 text-sm bg-background/80 border-border/50">
                     <SelectValue />
@@ -338,7 +338,7 @@ export function ApiPlaygroundDialog({
               {/* 账号选择 */}
               <div className="space-y-1.5">
                 <Label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
-                  指定账号
+                  {t('gateway.specifiedAccount')}
                   <span className="ml-1.5 normal-case tracking-normal font-normal opacity-70">
                     · {routingHint}
                   </span>
@@ -348,10 +348,10 @@ export function ApiPlaygroundDialog({
                   onValueChange={(value) => setSelectedAccount(value === '__default__' ? '' : value)}
                 >
                   <SelectTrigger className="h-9 text-sm bg-background/80 border-border/50">
-                    <SelectValue placeholder="自动选择" />
+                    <SelectValue placeholder={t('gateway.autoSelect')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__default__">自动选择（负载均衡）</SelectItem>
+                    <SelectItem value="__default__">{t('gateway.autoSelectLb')}</SelectItem>
                     {availableAccounts.map(acc => (
                       <SelectItem key={acc.id} value={acc.id}>
                         {accountLabel(acc)}
@@ -361,14 +361,14 @@ export function ApiPlaygroundDialog({
                 </Select>
                 {availableAccounts.length === 0 && (
                   <p className="text-[10px] text-amber-600 dark:text-amber-400">
-                    当前路由配置下没有可用账号
+                    {t('gateway.noAvailableAccountsForRouting')}
                   </p>
                 )}
               </div>
 
               {/* 快速模板 */}
               <div className="flex flex-wrap gap-1.5">
-                {Object.entries(QUICK_TEMPLATES).map(([key, { label }]) => (
+                {Object.entries(QUICK_TEMPLATES).map(([key, { labelKey }]) => (
                   <Button
                     key={key}
                     variant="outline"
@@ -380,7 +380,7 @@ export function ApiPlaygroundDialog({
                     onClick={() => handleTemplateSelect(key)}
                     disabled={loading}
                   >
-                    {label}
+                    {t(labelKey)}
                   </Button>
                 ))}
               </div>
@@ -394,11 +394,11 @@ export function ApiPlaygroundDialog({
               <div className="flex items-center justify-between px-3 py-2 bg-gradient-to-r from-muted/40 to-muted/20 border-b border-border/40">
                 <div className="flex items-center gap-2">
                   <span className="h-2 w-2 rounded-full bg-blue-500/70"></span>
-                  <span className="text-xs font-medium text-foreground">请求体</span>
+                  <span className="text-xs font-medium text-foreground">{t('gateway.requestBody')}</span>
                   <span className="text-[10px] text-muted-foreground">JSON</span>
                 </div>
                 <Button variant="ghost" size="sm" className="h-6 text-[11px] px-2 hover:text-primary" onClick={handleFormatJson} disabled={loading}>
-                  格式化
+                  {t('gateway.format')}
                 </Button>
               </div>
               <Textarea
@@ -408,7 +408,7 @@ export function ApiPlaygroundDialog({
                   setActiveTemplate('custom')
                 }}
                 className="flex-1 font-mono text-[11px] leading-relaxed resize-none border-0 rounded-none focus-visible:ring-0 bg-background/60"
-                placeholder="输入 JSON 请求体..."
+                placeholder={t('gateway.inputJsonPlaceholder')}
                 disabled={loading}
               />
             </div>
@@ -425,9 +425,9 @@ export function ApiPlaygroundDialog({
                     <span className="h-2 w-2 rounded-full bg-muted-foreground/30"></span>
                   )}
                   <span className="text-xs font-medium text-foreground">
-                    响应结果
+                    {t('gateway.responseResult')}
                   </span>
-                  {loading && <span className="text-[10px] text-primary animate-pulse">接收中...</span>}
+                  {loading && <span className="text-[10px] text-primary animate-pulse">{t('gateway.receiving')}</span>}
                   {selectedAccount && (
                     <span className="text-[10px] text-muted-foreground font-mono truncate max-w-[180px]">
                       x-account-id={selectedAccount.slice(0, 8)}…
@@ -437,7 +437,7 @@ export function ApiPlaygroundDialog({
                 {(response || streamingChunks.length > 0) && (
                   <Button variant="ghost" size="sm" className="h-6 text-[11px] px-2 hover:text-primary" onClick={handleCopyResponse}>
                     <Copy className="h-3 w-3 mr-1" />
-                    复制
+                    {t('gateway.copy')}
                   </Button>
                 )}
               </div>
@@ -445,7 +445,7 @@ export function ApiPlaygroundDialog({
                 value={streamingChunks.length > 0 ? streamingChunks.join('\n') : response}
                 readOnly
                 className="flex-1 font-mono text-[11px] leading-relaxed resize-none border-0 rounded-none focus-visible:ring-0 bg-muted/10"
-                placeholder="响应结果将显示在这里..."
+                placeholder={t('gateway.responsePlaceholder')}
               />
             </div>
           </div>
@@ -467,7 +467,7 @@ export function ApiPlaygroundDialog({
             </div>
             <Group gap="xs">
               <Button variant="outline" size="sm" className="h-8 px-3" onClick={() => onOpenChange(false)} disabled={loading}>
-                关闭
+                {t('gateway.close')}
               </Button>
               <Button
                 size="sm"
@@ -478,12 +478,12 @@ export function ApiPlaygroundDialog({
                 {loading ? (
                   <>
                     <RotateCw className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                    请求中...
+                    {t('gateway.requesting')}
                   </>
                 ) : (
                   <>
                     <Play className="h-3.5 w-3.5 mr-1.5" />
-                    发送请求
+                    {t('gateway.sendRequest')}
                   </>
                 )}
               </Button>

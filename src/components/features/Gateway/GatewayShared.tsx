@@ -1,5 +1,6 @@
 import type React from 'react'
 import { Card, CardContent } from '@/components/ui/card'
+import { useApp } from '@/hooks/useApp'
 
 interface GatewaySurfaceCardProps extends React.HTMLAttributes<HTMLDivElement> {}
 
@@ -82,10 +83,12 @@ interface GatewayPathCardProps {
   actions?: React.ReactNode;
 }
 
-export function GatewayPathCard({ title = '日志目录', value, actions }: GatewayPathCardProps) {
+export function GatewayPathCard({ title, value, actions }: GatewayPathCardProps) {
+  const { t } = useApp()
+  const titleText = title ?? t('gateway.logDir')
   return (
     <GatewaySubCard>
-      <p className="text-xs font-semibold">{title}</p>
+      <p className="text-xs font-semibold">{titleText}</p>
       <p className="text-xs mt-1.5 font-mono break-all">
         {value}
       </p>

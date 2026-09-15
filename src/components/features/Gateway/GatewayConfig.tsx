@@ -17,14 +17,14 @@ const POOL_STATUS_COLORS: Record<string, string> = {
   banned: 'bg-red-500',
   invalid: 'bg-gray-500',
 }
-const POOL_STATUS_LABELS: Record<string, string> = {
-  active: '正常',
-  overage: '超额',
-  capped: '封顶',
-  banned: '封禁',
-  invalid: '失效',
-}
 const POOL_STATUS_ORDER: Record<string, number> = { active: 0, overage: 1, '': 0, capped: 2, invalid: 3, banned: 4 }
+const POOL_STATUS_KEYS: Record<string, string> = {
+  active: 'gateway.poolStatusActive',
+  overage: 'gateway.poolStatusOverage',
+  capped: 'gateway.poolStatusCapped',
+  banned: 'gateway.poolStatusBanned',
+  invalid: 'gateway.poolStatusInvalid',
+}
 import { Textarea } from '@/components/ui/textarea'
 import { GatewaySurfaceCard } from './GatewayShared'
 import ModelMappingDialog from './ModelMappingDialog'
@@ -79,15 +79,15 @@ function GatewayConfig({
   const [poolStatusFilter, setPoolStatusFilter] = useState<string>('all')
 
   const getStrategyLabel = (strategy: string) => {
-    const labels: Record<string, string> = {
-      round_robin: '轮询',
-      random: '随机',
-      balanced: '均衡',
-      most_quota: '最多配额',
-      weighted_random: '加权随机',
-      least_connections: '最少连接'
+    const STRATEGY_KEYS: Record<string, string> = {
+      round_robin: 'gateway.roundRobin',
+      random: 'gateway.random',
+      balanced: 'gateway.strategyBalanced',
+      most_quota: 'gateway.strategyMostQuota',
+      weighted_random: 'gateway.weightedRandom',
+      least_connections: 'gateway.leastConnections',
     }
-    return labels[strategy] || strategy
+    return STRATEGY_KEYS[strategy] ? t(STRATEGY_KEYS[strategy]) : strategy
   }
 
   const selectedPoolAccountIds = Array.isArray(config.poolAccountIds) ? config.poolAccountIds : []
@@ -143,11 +143,11 @@ function GatewayConfig({
             <div className="space-y-3">
               <div className="text-sm font-medium text-foreground flex items-center gap-2">
                 <div className="w-1 h-4 bg-primary rounded-full"></div>
-                网络与路由
+                {t('gateway.sectionNetworkRouting')}
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="flex flex-col gap-1.5">
-                  <Label>监听地址</Label>
+                  <Label>{t('gateway.listenAddress')}</Label>
                   <Input
                     value={config.host}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setField('host', e.target.value || '127.0.0.1')}
@@ -156,7 +156,7 @@ function GatewayConfig({
                   {fieldErrors.host && <div className="text-xs text-red-500">{fieldErrors.host}</div>}
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  <Label>端口</Label>
+                  <Label>{t('gateway.port')}</Label>
                   <Input
                     type="number"
                     value={config.port}
@@ -246,10 +246,10 @@ function GatewayConfig({
                 ) : config.accountMode === 'group' ? (
                   <>
                     <div className="flex flex-col gap-1.5">
-                      <Label>选择分组</Label>
+                      <Label>{t('gateway.selectGroup')}</Label>
                       <Select value={config.groupId} onValueChange={(v: string) => setField('groupId', v)}>
                         <SelectTrigger className={fieldErrors.groupId ? 'border-red-500' : ''}>
-                          <SelectValue placeholder="选择一个分组" />
+                          <SelectValue placeholder={t('gateway.selectGroupPlaceholder')} />
                         </SelectTrigger>
                         <SelectContent>
                           {groupOptions.map((opt: any) => (
@@ -447,22 +447,22 @@ function GatewayConfig({
       <DialogRoot open={showAccountPoolDialog} onOpenChange={setShowAccountPoolDialog}>
         <DialogContent maxWidth="800px">
           <DialogHeader icon={Users}>
-            <DialogTitle>配置账号池</DialogTitle>
+            <DialogTitle>{t('gateway.configureAccountPool')}</DialogTitle>
             <DialogDescription>
-              选择参与网关轮换的账号，并配置请求分发策略。
+              {t('gateway.accountPoolDescription')}
             </DialogDescription>
           </DialogHeader>
 
           <DialogBody className="space-y-4">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div className="rounded-xl border border-border bg-muted/20 p-3">
-                <div className="text-xs text-muted-foreground">已选择账号</div>
+                <div className="text-xs text-muted-foreground">{t('gateway.selectedAccounts')}</div>
                 <div className="mt-1 text-2xl font-semibold text-foreground">{selectedPoolAccountIds.length}<span className="text-sm text-muted-foreground font-normal ml-1">/ {accountOptions.length}</span></div>
               </div>
               <div className="rounded-xl border border-border bg-muted/20 p-3">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-xs text-muted-foreground">路由策略</div>
-                  {!config.strategy && <Badge variant="outline" className="h-5 rounded-full px-2 text-[10px]">默认：轮询</Badge>}
+                  <div className="text-xs text-muted-foreground">{t('gateway.routingStrategy')}</div>
+                  {!config.strategy && <Badge variant="outline" className="h-5 rounded-full px-2 text-[10px]">{t('gateway.defaultRoundRobin')}</Badge>}
                 </div>
                 <Select value={effectiveStrategy} onValueChange={(v: string) => setField('strategy', v || 'round_robin')}>
                   <SelectTrigger className="mt-1 h-9">
@@ -484,7 +484,7 @@ function GatewayConfig({
                 <Input
                   value={poolSearchQuery}
                   onChange={e => setPoolSearchQuery(e.target.value)}
-                  placeholder="搜索账号..."
+                  placeholder={t('gateway.searchAccounts')}
                   className="h-8 pl-8 text-xs"
                 />
               </div>
@@ -493,16 +493,16 @@ function GatewayConfig({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">全部</SelectItem>
-                  <SelectItem value="active">正常</SelectItem>
-                  <SelectItem value="overage">超额</SelectItem>
-                  <SelectItem value="capped">封顶</SelectItem>
-                  <SelectItem value="banned">封禁</SelectItem>
-                  <SelectItem value="invalid">失效</SelectItem>
+                  <SelectItem value="all">{t('gateway.statusAll')}</SelectItem>
+                  <SelectItem value="active">{t('gateway.poolStatusActive')}</SelectItem>
+                  <SelectItem value="overage">{t('gateway.poolStatusOverage')}</SelectItem>
+                  <SelectItem value="capped">{t('gateway.poolStatusCapped')}</SelectItem>
+                  <SelectItem value="banned">{t('gateway.poolStatusBanned')}</SelectItem>
+                  <SelectItem value="invalid">{t('gateway.poolStatusInvalid')}</SelectItem>
                 </SelectContent>
               </Select>
               <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={toggleAllPoolAccounts} disabled={accountOptions.length === 0}>
-                {selectedPoolAccountIds.length === accountOptions.length && accountOptions.length > 0 ? '取消全选' : '全选'}
+                {selectedPoolAccountIds.length === accountOptions.length && accountOptions.length > 0 ? t('gateway.deselectAll') : t('gateway.selectAll')}
               </Button>
               <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => {
                 const activeIds = accountOptions
@@ -516,7 +516,7 @@ function GatewayConfig({
                   .map((opt: any) => opt.value)
                 setField('poolAccountIds', activeIds)
               }}>
-                选可用
+                {t('gateway.selectAvailable')}
               </Button>
             </div>
 
@@ -524,7 +524,7 @@ function GatewayConfig({
             <div className="max-h-[380px] space-y-1.5 overflow-y-auto pr-1">
               {accountOptions.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-                  暂无可用账号，请先添加账号。
+                  {t('gateway.noAvailableAccounts')}
                 </div>
               ) : (
                 filteredPoolAccounts.map((opt: any) => {
@@ -537,7 +537,7 @@ function GatewayConfig({
                     const currentOverages = breakdown?.currentOverages ?? 0
                     const overageCap = breakdown?.overageCap ?? 0
                     const percent = limit > 0 ? Math.min(100, (used / limit) * 100) : 0
-                    const email = acct.email || acct.userId || '未知账号'
+                    const email = acct.email || acct.userId || t('gateway.unknownAccount')
                     const provider = acct.provider || ''
                     const subPlan = acct.usageData?.subscriptionInfo?.subscriptionTitle || ''
                     const hasData = !!acct.usageData
@@ -558,7 +558,7 @@ function GatewayConfig({
                             {provider && <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 shrink-0">{provider}</Badge>}
                             {subPlan && <Badge variant="secondary" className="text-[9px] px-1 py-0 h-4 shrink-0">{subPlan}</Badge>}
                             <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${POOL_STATUS_COLORS[status] || 'bg-gray-400'}`} />
-                            <span className="text-[9px] text-muted-foreground shrink-0">{POOL_STATUS_LABELS[status] || status}</span>
+                            <span className="text-[9px] text-muted-foreground shrink-0">{POOL_STATUS_KEYS[status] ? t(POOL_STATUS_KEYS[status]) : (status || '')}</span>
                           </div>
                           {/* 额度信息 */}
                           {hasData ? (
@@ -574,12 +574,12 @@ function GatewayConfig({
                                   ? `⚡${formatUsage(currentOverages)}${overageCap > 0 ? '/' + formatUsage(overageCap) : ''}`
                                   : limit > 0
                                     ? `${formatUsage(Math.max(0, limit - used))}/${formatUsage(limit)} (${Math.round(100 - percent)}%)`
-                                    : '无额度'
+                                    : t('gateway.noQuota')
                                 }
                               </span>
                             </div>
                           ) : (
-                            <div className="mt-1 text-[9px] text-muted-foreground/60 italic">未刷新</div>
+                            <div className="mt-1 text-[9px] text-muted-foreground/60 italic">{t('gateway.notRefreshed')}</div>
                           )}
                         </div>
                         {checked && <CheckCircle2 size={14} className="text-primary shrink-0" />}
@@ -591,8 +591,8 @@ function GatewayConfig({
           </DialogBody>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAccountPoolDialog(false)}>关闭</Button>
-            <Button onClick={() => { setShowAccountPoolDialog(false); handleSaveConfig() }}>保存配置</Button>
+            <Button variant="outline" onClick={() => setShowAccountPoolDialog(false)}>{t('gateway.close')}</Button>
+            <Button onClick={() => { setShowAccountPoolDialog(false); handleSaveConfig() }}>{t('gateway.saveConfig')}</Button>
           </DialogFooter>
         </DialogContent>
       </DialogRoot>
