@@ -194,6 +194,40 @@ export function deleteSpec(scope: string, projectDir: string | null, name: strin
 }
 
 // ============================================================
+// Workflows（Kiro 1.1.14）
+// <project>/.kiro/workflows/*.workflow.{json,yaml,yml} 与 ~/.kiro/workflows/*
+// （bundled:// 与 generated:// 属运行时/只读来源，本管理端不编辑）
+// ============================================================
+
+export interface WorkflowFile {
+  fileName: string
+  content: string
+  size: number
+  modifiedAt?: string | null
+  scope: string
+}
+
+export function listWorkflows<T = WorkflowFile[]>(scope: string, projectDir: string | null = null) {
+  return invoke<T>('list_workflows', { scope, projectDir })
+}
+
+export function readWorkflow<T = WorkflowFile>(scope: string, projectDir: string | null, fileName: string) {
+  return invoke<T>('read_workflow', { scope, projectDir, fileName })
+}
+
+export function saveWorkflow(scope: string, projectDir: string | null, fileName: string, content: string) {
+  return invoke('save_workflow', { scope, projectDir, fileName, content })
+}
+
+export function createWorkflow(scope: string, projectDir: string | null, fileName: string) {
+  return invoke('create_workflow', { scope, projectDir, fileName })
+}
+
+export function deleteWorkflow(scope: string, projectDir: string | null, fileName: string) {
+  return invoke('delete_workflow', { scope, projectDir, fileName })
+}
+
+// ============================================================
 // MCP
 // ============================================================
 

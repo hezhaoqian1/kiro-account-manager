@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { getCustomAgents, getHooks, getPowers, getSkills, getSteeringFiles, scanAgentsMd, listSpecs } from '../../../api/kiroConfigApi'
+import { getCustomAgents, getHooks, getPowers, getSkills, getSteeringFiles, scanAgentsMd, listSpecs, listWorkflows } from '../../../api/kiroConfigApi'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useApp } from '../../../hooks/useApp'
 import { Server, Settings2, FileText, Puzzle, Bot, Zap, FolderOpen, Link2, X } from 'lucide-react'
@@ -12,6 +12,7 @@ import AgentsPanel from './AgentsPanel'
 import PowersPanel from './PowersPanel'
 import AgentsMdPanel from './AgentsMdPanel'
 import SpecsPanel from './SpecsPanel'
+import WorkflowsPanel from './WorkflowsPanel'
 import { handleUiError } from '../../../utils/errorLogger'
 import { getThemeAccent } from './themeAccent'
 
@@ -28,6 +29,7 @@ function KiroConfig() {
   const [powersCount, setPowersCount] = useState(0)
   const [agentsMdCount, setAgentsMdCount] = useState(0)
   const [specsCount, setSpecsCount] = useState(0)
+  const [workflowsCount, setWorkflowsCount] = useState(0)
   const [projectDir, setProjectDir] = useState<string | null>(null)
 
   // 初始加载数量
@@ -53,6 +55,10 @@ function KiroConfig() {
     // Specs：用户级与项目级都会预载计数，便于 Tab 徽标显示数量（无需先进入面板）。
     const specScope = projectDir ? 'project' : 'user'
     listSpecs(specScope, projectDir).then(s => setSpecsCount(s?.length || 0)).catch(() => setSpecsCount(0))
+
+    // Workflows：同上，预载计数。
+    const wfScope = projectDir ? 'project' : 'user'
+    listWorkflows(wfScope, projectDir).then(w => setWorkflowsCount(w?.length || 0)).catch(() => setWorkflowsCount(0))
   }, [projectDir])
 
 
@@ -76,6 +82,7 @@ function KiroConfig() {
     { id: 'steering', label: t('kiroConfig.steering'), icon: FileText, count: steeringCount },
     { id: 'agentsMd', label: t('kiroConfig.agentsMd'), icon: FileText, count: agentsMdCount },
     { id: 'specs', label: t('kiroConfig.specs'), icon: FileText, count: specsCount },
+    { id: 'workflows', label: t('kiroConfig.workflows'), icon: FileText, count: workflowsCount },
   ]
 
   return (
@@ -157,6 +164,9 @@ function KiroConfig() {
           </TabsContent>
           <TabsContent value="specs" className="h-full m-0">
             <SpecsPanel onCountChange={setSpecsCount} projectDir={projectDir} />
+          </TabsContent>
+          <TabsContent value="workflows" className="h-full m-0">
+            <WorkflowsPanel onCountChange={setWorkflowsCount} projectDir={projectDir} />
           </TabsContent>
           <TabsContent value="skills" className="h-full m-0">
             <SkillsPanel onCountChange={setSkillsCount} projectDir={projectDir} />

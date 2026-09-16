@@ -8,3 +8,4 @@ pub mod powers;
 pub mod skills;
 pub mod steering;
 pub mod specs;
+pub mod workflows;

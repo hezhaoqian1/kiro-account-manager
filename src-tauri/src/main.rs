@@ -143,6 +143,9 @@ use commands::steering_cmd::{
 use commands::specs_cmd::{
     create_spec, delete_spec, list_specs, read_spec, save_spec_file,
 };
+use commands::workflows_cmd::{
+    create_workflow, delete_workflow, list_workflows, read_workflow, save_workflow,
+};
 //Skills
 use commands::skills_cmd::{
     create_skill, delete_skill, get_skill, get_skills, import_skill_from_github,
@@ -624,6 +627,12 @@ fn main() {
             save_spec_file,
             create_spec,
             delete_spec,
+            // Workflows 管理命令
+            list_workflows,
+            read_workflow,
+            save_workflow,
+            create_workflow,
+            delete_workflow,
             // Skills 管理命令
             get_skills,
             get_skill,
