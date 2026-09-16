@@ -49,7 +49,85 @@ const normalize = (rules: PermissionRule[], policies: string): PermissionPolicy 
   policies: lines(policies),
 })
 
+// Kiro 内置的只读 shell 命令白名单，按工具分组（逆向自 1.1.14 扩展产物的 read-only-shell 预设）。
+// 组名保持英文标识符，与 capability / preset id 一致，免得多语言维护。
+const SHELL_COMMAND_GROUPS: { id: string; commands: string[] }[] = [
+  {
+    id: 'node-bun',
+    commands: [
+      'node --version', 'node -v', 'npm install *', 'npm ci *', 'npm run *', 'npm test *', 'npm pack *',
+      'bun install *', 'bun run *', 'bun test *', 'pnpm *', 'yarn *',
+    ],
+  },
+  {
+    id: 'rust',
+    commands: ['cargo build *', 'cargo test *', 'cargo run *', 'cargo check *', 'cargo clippy *', 'cargo fmt *'],
+  },
+  {
+    id: 'python',
+    commands: [
+      'python --version', 'python3 --version', 'pip *', 'pip3 *', 'uv pip *', 'uv venv *', 'uv sync *',
+      'uv lock *', 'uv add *', 'uv remove *', 'ruff *', 'pyright *', 'pytest *', 'mypy *', 'black *', 'isort *',
+    ],
+  },
+  {
+    id: 'go',
+    commands: ['go version', 'go env *', 'go build *', 'go test *', 'go mod *', 'go vet *', 'go fmt *'],
+  },
+  {
+    id: 'frontend',
+    commands: ['tsc *', 'eslint *', 'jest *', 'vitest *', 'mocha *', 'prettier *'],
+  },
+  {
+    id: 'github-cli',
+    commands: [
+      'gh pr *', 'gh issue *', 'gh repo view *', 'gh run *', 'gh workflow *', 'gh status',
+      'gh auth status', 'gh search *', 'gh label list *',
+    ],
+  },
+  {
+    id: 'gitlab-cli',
+    commands: ['glab mr *', 'glab issue *', 'glab repo view *', 'glab ci *', 'glab auth status'],
+  },
+  {
+    id: 'file-ops',
+    commands: ['mkdir *', 'touch *', 'mv *', 'cp *', 'ln *'],
+  },
+  {
+    id: 'inspect',
+    commands: [
+      'echo *', 'printf *', 'ls *', 'head *', 'tail *', 'cat *', 'less *', 'grep *', 'rg *', 'diff *',
+      'jq *', 'tr *', 'base64 *', 'sort *', 'uniq *', 'cut *', 'comm *', 'column *', 'wc *',
+      'sha256sum *', 'md5sum *', 'realpath *', 'readlink *', 'stat *', 'file *',
+    ],
+  },
+]
+
+const READ_ONLY_SHELL_COMMANDS = SHELL_COMMAND_GROUPS.flatMap(g => g.commands)
+
+// Kiro 内置的三个权限预设（`policies: ["<id>"]` 引用的就是这些 id，这里按 1.1.14 实测
+// 展开为等价的 rules）。展开而非写 policies：rules 是本面板的编辑对象，展开后用户可直接微调。
+const PRESET_IDS = ['read-all', 'read-only-shell', 'read-workspace'] as const
+type PresetId = (typeof PRESET_IDS)[number]
+
+const PRESETS: Record<PresetId, PermissionRule[]> = {
+  'read-all': [
+    { capability: 'fs_read', effect: 'allow', match: [], exclude: [] },
+    { capability: 'web_fetch', effect: 'allow', match: [], exclude: [] },
+    { capability: 'web_search', effect: 'allow', match: [], exclude: [] },
+  ],
+  'read-only-shell': [
+    { capability: 'shell', effect: 'allow', match: [...READ_ONLY_SHELL_COMMANDS], exclude: [] },
+  ],
+  // 官方只描述「限工作区内」，未给出对应 match 语法，故留空由 IDE 按工作区自行裁决。
+  'read-workspace': [{ capability: 'fs_read', effect: 'allow', match: [], exclude: [] }],
+}
+
 const emptyRule = (capability: string): PermissionRule => ({ capability, effect: 'allow', match: [], exclude: [] })
+
+// 规则指纹：用于追加预设时跳过已存在的重复项，避免连点两次堆出一模一样的规则
+const ruleSignature = (r: PermissionRule) =>
+  `${r.capability}|${r.effect}|${[...(r.match || [])].sort().join('\u0000')}`
 
 // Kiro IDE 1.0 权限面板。
 // IDE 1.0 废弃了旧的 trustedCommands / commandDenylist（kiroAgent.* 键只在首次启动
@@ -67,6 +145,8 @@ export default function PermissionsPanel({ t }: { t: (key: string) => string }) 
   const [baseline, setBaseline] = useState('') // 已保存快照，用于脏检查
   // 弹窗草稿：index 为 null 表示新建；草稿独立于 rules，取消即丢弃
   const [draft, setDraft] = useState<{ index: number | null; rule: PermissionRule } | null>(null)
+  // 命令组下拉选完即失效（非受控 Select），靠 nonce 重挂载把显示值刷回 placeholder
+  const [groupNonce, setGroupNonce] = useState(0)
 
   // 作用域：global = ~/.kiro/settings/，project = ~/.kiro/workspace-roots/<workspace-id>/
   const [scope, setScope] = useState<'global' | 'project'>('global')
@@ -164,6 +244,25 @@ export default function PermissionsPanel({ t }: { t: (key: string) => string }) 
   const patchDraft = (patch: Partial<PermissionRule>) =>
     setDraft(d => (d ? { ...d, rule: { ...d.rule, ...patch } } : d))
   const removeRule = (idx: number) => setRules(rs => rs.filter((_, i) => i !== idx))
+
+  const applyPreset = (id: PresetId) =>
+    setRules(rs => {
+      const existing = new Set(rs.map(ruleSignature))
+      return [
+        ...rs,
+        ...PRESETS[id]
+          .filter(r => !existing.has(ruleSignature(r)))
+          .map(r => ({ ...r, match: [...(r.match || [])], exclude: [...(r.exclude || [])] })),
+      ]
+    })
+
+  // 把一整组只读命令追加进草稿的 match（去重，保持已有顺序）
+  const appendShellGroup = (groupId: string) => {
+    if (!draft) return
+    const commands = SHELL_COMMAND_GROUPS.find(g => g.id === groupId)?.commands ?? []
+    patchDraft({ match: Array.from(new Set([...(draft.rule.match || []), ...commands])) })
+    setGroupNonce(n => n + 1)
+  }
 
   const handleSave = async () => {
     setSaving(true)
@@ -309,6 +408,19 @@ export default function PermissionsPanel({ t }: { t: (key: string) => string }) 
             <Button variant="outline" size="sm" onClick={openNew}>
               <Plus /> {t('settings.permissionAdd')}
             </Button>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] text-muted-foreground">{t('settings.permissionPreset')}</span>
+              {PRESET_IDS.map(id => (
+                <button
+                  key={id}
+                  onClick={() => applyPreset(id)}
+                  title={t(`settings.permissionPreset_${id}`)}
+                  className="rounded-md border border-border px-2 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-muted/50 hover:text-primary cursor-pointer"
+                >
+                  {id}
+                </button>
+              ))}
+            </div>
             <div className="ml-auto flex items-center gap-2">
               {dirty && (
                 <span className="text-[11px] text-amber-600 dark:text-amber-400">
@@ -377,6 +489,24 @@ export default function PermissionsPanel({ t }: { t: (key: string) => string }) 
                     </Select>
                   </div>
                 </div>
+
+                {draft.rule.capability === 'shell' && (
+                  <div>
+                    <Label className="block text-[11px] text-muted-foreground mb-1">
+                      {t('settings.permissionShellGroup')}
+                    </Label>
+                    <Select key={groupNonce} onValueChange={appendShellGroup}>
+                      <SelectTrigger className="h-8 text-xs w-full">
+                        <SelectValue placeholder={t('settings.permissionShellGroupPick')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SHELL_COMMAND_GROUPS.map(g => (
+                          <SelectItem key={g.id} value={g.id}>{g.id}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
                 <div>
                   <Label className="block text-[11px] text-muted-foreground mb-1">
