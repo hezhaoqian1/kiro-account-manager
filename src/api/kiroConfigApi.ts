@@ -66,6 +66,40 @@ export function uninstallPower(name: string) {
   return invoke('uninstall_power', { name })
 }
 
+/** Power 来源（对应 Kiro user-added 注册表的 source 字段） */
+export type PowerSource =
+  | { type: 'local'; path: string }
+  | { type: 'repo'; repositoryCloneUrl: string; pathInRepo: string; repositoryBranch: string }
+
+export interface UserAddedPowerEntry {
+  name: string
+  description: string
+  repositoryUrl?: string
+  source: PowerSource
+}
+
+/**
+ * 从本地文件夹安装 Power（对应 Kiro「Import power from a folder」）。
+ * 返回实际使用的 Power 名称（由目录名 sanitize 得出）。
+ * 要求所选文件夹含 plugin.json 或 POWER.md。
+ */
+export function installPowerFromLocal(sourceDir: string) {
+  return invoke<string>('install_power_from_local', { sourceDir })
+}
+
+/**
+ * 从公开 GitHub URL 导入 Power（对应 Kiro「Import power from GitHub」）。
+ * 支持 `https://github.com/owner/repo` 与 `/tree/<branch>/<subdir>` 形式。
+ */
+export function installPowerFromUrl(url: string) {
+  return invoke<string>('install_power_from_url', { url })
+}
+
+/** 读取自定义 Power 来源注册表（本地文件夹 / GitHub 导入） */
+export function getUserAddedPowers() {
+  return invoke<UserAddedPowerEntry[]>('get_user_added_powers')
+}
+
 // ============================================================
 // Skills / Steering
 // ============================================================

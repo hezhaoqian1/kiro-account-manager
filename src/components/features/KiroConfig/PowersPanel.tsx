@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { getPowers, getPowerRegistries, getRecommendedPowers, installPower, uninstallPower } from '../../../api/kiroConfigApi'
+import { getPowers, getPowerRegistries, getRecommendedPowers, installPower, uninstallPower, installPowerFromLocal, installPowerFromUrl, getUserAddedPowers } from '../../../api/kiroConfigApi'
 import { openUrl } from '@tauri-apps/plugin-opener'
+import { open } from '@tauri-apps/plugin-dialog'
 import { useApp } from '../../../hooks/useApp'
 import { useDialog } from '../../../contexts/DialogContext'
-import { Zap, RefreshCw, Trash2, Server, FileText, Tag, ChevronDown, ChevronRight, ExternalLink, Download, Check, Globe } from 'lucide-react'
+import { Zap, RefreshCw, Trash2, Server, FileText, Tag, ChevronDown, ChevronRight, ExternalLink, Download, Check, Globe, FolderPlus, Link2, X, Loader2 } from 'lucide-react'
 import { handleUiError } from '../../../utils/errorLogger'
 import { getThemeAccent, getSolidAccentButton, getGradientAccentButton, getThemeSurfaceStyles } from './themeAccent'
 import React from 'react'
@@ -38,16 +39,24 @@ function PowersPanel({ onCountChange, readOnly }: any) {
   const [selectedRec, setSelectedRec] = useState<any>(null)
   const [expandedSections, setExpandedSections] = useState({ mcp: true, steering: false, md: false })
   const [installing, setInstalling] = useState<string | null>(null) // 正在安装的 power name
+  // 自定义 Power 来源（本地文件夹 / GitHub URL），来自 registries/user-added.json
+  const [userAdded, setUserAdded] = useState<any[]>([])
+  const [showAddMenu, setShowAddMenu] = useState(false)
+  const [showUrlModal, setShowUrlModal] = useState(false)
+  const [urlInput, setUrlInput] = useState('')
+  const [importing, setImporting] = useState(false)
 
   const loadPowers = useCallback(async () => {
     setLoading(true)
     try {
-      const [data, regs] = await Promise.all([
+      const [data, regs, added] = await Promise.all([
         getPowers(),
-        getPowerRegistries()
+        getPowerRegistries(),
+        getUserAddedPowers().catch(() => [])
       ])
       setPowers(data)
       setRegistries(regs)
+      setUserAdded(added || [])
       onCountChange?.(data?.length || 0)
     } catch (e) {
       handleUiError('加载 Powers 失败', e, { userMessage: t('powers.loadFailed') || '加载 Powers 失败' })
@@ -55,6 +64,54 @@ function PowersPanel({ onCountChange, readOnly }: any) {
       setLoading(false)
     }
   }, [onCountChange, t])
+
+  /** 从本地文件夹导入 Power（含 plugin.json 或 POWER.md 的目录） */
+  const handleImportFromFolder = async () => {
+    if (readOnly) return
+    setShowAddMenu(false)
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: t('powers.selectFolder')
+      })
+      if (!selected) return
+      setImporting(true)
+      const installedName = await installPowerFromLocal(selected as string)
+      await loadPowers()
+      showSuccess(t('powers.installSuccess'), t('powers.installSuccessFromFolder', { name: installedName }))
+    } catch (e) {
+      handleUiError('从文件夹导入 Power 失败', e, { userMessage: t('powers.importFolderFailed') || '导入失败' })
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  /** 从公开 GitHub URL 导入 Power */
+  const handleImportFromUrl = async () => {
+    if (readOnly) return
+    const url = urlInput.trim()
+    if (!url) return
+    setImporting(true)
+    try {
+      const installedName = await installPowerFromUrl(url)
+      setShowUrlModal(false)
+      setUrlInput('')
+      await loadPowers()
+      showSuccess(t('powers.installSuccess'), t('powers.installSuccessFromUrl', { name: installedName }))
+    } catch (e) {
+      handleUiError('从 URL 导入 Power 失败', e, { userMessage: t('powers.importUrlFailed') || '导入失败' })
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  /** 查询某个已安装 Power 是否为自定义来源，返回其 source 描述 */
+  const getUserAddedSource = useCallback((powerName: string) => {
+    const entry = userAdded.find(p => p.name === powerName)
+    if (!entry) return null
+    return entry.source?.type === 'local' ? 'local' : 'repo'
+  }, [userAdded])
 
   const loadRecommended = useCallback(async () => {
     setRecLoading(true)
@@ -154,6 +211,46 @@ function PowersPanel({ onCountChange, readOnly }: any) {
               {t('powers.installed')} ({powers.length})
             </button>
           </div>
+
+          {/* 添加自定义 Power：对应 Kiro 的 addCustomPower（folder / url 两条路径） */}
+          <div className="relative mt-2">
+            <button
+              onClick={() => setShowAddMenu(v => !v)}
+              disabled={readOnly || importing}
+              className={`cursor-pointer w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-dashed border-border text-muted-foreground hover:opacity-80 transition-all disabled:opacity-40 disabled:cursor-not-allowed`}
+            >
+              {importing ? <Loader2 size={13} className="animate-spin" /> : <FolderPlus size={13} />}
+              {importing ? t('powers.importing') : t('powers.addCustom')}
+              {!importing && <ChevronDown size={12} />}
+            </button>
+            {showAddMenu && !importing && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowAddMenu(false)} />
+                <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-lg border border-border bg-popover shadow-lg overflow-hidden">
+                  <button
+                    onClick={handleImportFromFolder}
+                    className="cursor-pointer w-full flex items-start gap-2 px-3 py-2 text-left hover:bg-muted/50 transition-colors"
+                  >
+                    <FolderPlus size={14} className={`mt-0.5 shrink-0 ${accent.text}`} />
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium text-foreground">{t('powers.importFromFolder')}</div>
+                      <div className="text-[11px] text-muted-foreground leading-snug">{t('powers.importFromFolderHint')}</div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => { setShowAddMenu(false); setShowUrlModal(true) }}
+                    className="cursor-pointer w-full flex items-start gap-2 px-3 py-2 text-left hover:bg-muted/50 transition-colors border-t border-border"
+                  >
+                    <Link2 size={14} className={`mt-0.5 shrink-0 ${accent.text}`} />
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium text-foreground">{t('powers.importFromUrl')}</div>
+                      <div className="text-[11px] text-muted-foreground leading-snug">{t('powers.importFromUrlHint')}</div>
+                    </div>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
         {/* 列表内容 */}
@@ -213,6 +310,17 @@ function PowersPanel({ onCountChange, readOnly }: any) {
                       </div>
                       <div className={`flex items-center gap-2 text-xs text-muted-foreground mt-2 flex-wrap`} style={{ marginLeft: '2.375rem' }}>
                         <span className={`px-1.5 py-0.5 rounded bg-muted/30 text-[10px] font-medium`}>{formatSize(power.size)}</span>
+                        {/* 自定义来源标记：本地文件夹导入的 Power 与推荐源区分开 */}
+                        {getUserAddedSource(power.name) === 'local' && (
+                          <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 text-[10px] font-medium" title={t('powers.sourceLocalHint')}>
+                            <FolderPlus size={10} /> {t('powers.sourceLocal')}
+                          </span>
+                        )}
+                        {getUserAddedSource(power.name) === 'repo' && (
+                          <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-600 text-[10px] font-medium" title={t('powers.sourceRepoHint')}>
+                            <Link2 size={10} /> {t('powers.sourceRepo')}
+                          </span>
+                        )}
                         {power.mcpServers.length > 0 && (
                           <span className="flex items-center gap-1 text-[10px]">
                             <Server size={10} /> {power.mcpServers.length} MCP
@@ -459,6 +567,53 @@ function PowersPanel({ onCountChange, readOnly }: any) {
           </div>
         )}
       </div>
+
+      {/* GitHub URL 导入弹窗（对应 Kiro addCustomPowerByUrl） */}
+      {showUrlModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-xl border border-border bg-background shadow-xl">
+            <div className={`flex items-center justify-between px-4 py-3 ${colors.dialogHeader} rounded-t-xl`}>
+              <div className="flex items-center gap-2">
+                <Link2 size={16} className={accent.text} />
+                <h3 className="text-sm font-semibold text-foreground">{t('powers.importFromUrl')}</h3>
+              </div>
+              <button
+                onClick={() => { setShowUrlModal(false); setUrlInput('') }}
+                className="cursor-pointer p-1 rounded-lg hover:bg-muted/50 transition-colors"
+              >
+                <X size={16} className="text-muted-foreground" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <p className="text-xs text-muted-foreground leading-relaxed">{t('powers.importUrlDesc')}</p>
+              <input
+                autoFocus
+                value={urlInput}
+                onChange={e => setUrlInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !importing) handleImportFromUrl() }}
+                placeholder="https://github.com/owner/repo"
+                className={`w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none ${colors.inputFocus}`}
+              />
+            </div>
+            <div className="flex justify-end gap-2 px-4 py-3 border-t border-border">
+              <button
+                onClick={() => { setShowUrlModal(false); setUrlInput('') }}
+                className="cursor-pointer px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:bg-muted/50 transition-colors"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                onClick={handleImportFromUrl}
+                disabled={!urlInput.trim() || importing || readOnly}
+                className={`cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${accentSolidButtonClass} disabled:opacity-40 disabled:cursor-not-allowed`}
+              >
+                {importing && <Loader2 size={13} className="animate-spin" />}
+                {importing ? t('powers.importing') : t('powers.import')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

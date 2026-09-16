@@ -131,7 +131,8 @@ use commands::proxy_cmd::{detect_system_proxy, test_account_proxy};
 
 //Powers
 use commands::powers_cmd::{
-    get_power, get_power_registries, get_powers, get_recommended_powers, install_power,
+    get_power, get_power_registries, get_powers, get_recommended_powers, get_user_added_powers,
+    install_power, install_power_from_local, install_power_from_url,
     uninstall_power,
 };
 //Steering
@@ -658,8 +659,11 @@ fn main() {
             get_powers,
             get_power,
             install_power,
+            install_power_from_local,
+            install_power_from_url,
             uninstall_power,
             get_power_registries,
+            get_user_added_powers,
             get_recommended_powers,
             // Session Manager 命令
             list_workspaces,

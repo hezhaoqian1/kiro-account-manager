@@ -444,14 +444,19 @@ impl PowersManager {
     }
 
     /// 安装推荐 Power（与 Kiro IDE 一致的安装流程）
+    /// 安装来自 git 仓库的 Power（推荐源 / GitHub URL 导入）。
     /// 1. git clone 到 ~/.kiro/powers/repos/<name>/
-    /// 2. 只复制 POWER.md, mcp.json, steering/*.md 到 ~/.kiro/powers/installed/<name>/
+    /// 2. 只复制 POWER.md, plugin.json, mcp.json, steering/*.md 到 ~/.kiro/powers/installed/<name>/
     /// 3. 更新 installed.json
+    ///
+    /// `registry_id` 决定 installed.json 中记录的来源注册表：
+    /// 推荐源为 `kiro-recommended`；用户自建为 `user-added`（见 `install_from_repo`）。
     pub fn install(
         name: &str,
         clone_url: &str,
         path_in_repo: &str,
         branch: &str,
+        registry_id: &str,
     ) -> Result<(), String> {
         let dir = Self::powers_dir().ok_or("无法获取用户目录")?;
 
@@ -527,22 +532,11 @@ impl PowersManager {
         let source_path = source_path_canonical;
 
         // 3) 只复制允许的文件到 installed/<name>/（与 Kiro copyPowerFiles 一致）
+        //    与本地导入共用同一复制器，保证两种来源产出结构一致（含 plugin.json 支持）
         fs::create_dir_all(&install_path).map_err(|e| format!("创建安装目录失败: {e}"))?;
-
-        // 复制 POWER.md 和 mcp.json
-        for file in &["POWER.md", "mcp.json"] {
-            let src = source_path.join(file);
-            if src.exists() {
-                fs::copy(&src, install_path.join(file))
-                    .map_err(|e| format!("复制 {file} 失败: {e}"))?;
-            }
-        }
-
-        // 复制 steering/ 目录（只复制 .md 文件）
-        let steering_src = source_path.join("steering");
-        if steering_src.exists() && steering_src.is_dir() {
-            let steering_dst = install_path.join("steering");
-            Self::copy_steering_dir(&steering_src, &steering_dst)?;
+        if let Err(e) = Self::copy_power_files(&source_path, &install_path) {
+            let _ = fs::remove_dir_all(&install_path);
+            return Err(e);
         }
 
         // 4) 更新 installed.json
@@ -550,7 +544,7 @@ impl PowersManager {
         if !installed.installed_powers.iter().any(|e| e.name == name) {
             installed.installed_powers.push(InstalledPowerEntry {
                 name: name.to_string(),
-                registry_id: "kiro-recommended".to_string(),
+                registry_id: registry_id.to_string(),
                 auto_installed: false,
             });
         }
@@ -572,10 +566,223 @@ impl PowersManager {
         url.to_string()
     }
 
-    /// 复制 steering 目录（只复制 .md 文件，递归子目录）
-    fn copy_steering_dir(src: &std::path::Path, dst: &std::path::Path) -> Result<(), String> {
-        fs::create_dir_all(dst).map_err(|e| format!("创建 steering 目录失败: {e}"))?;
-        for entry in fs::read_dir(src).map_err(|e| format!("读取 steering 目录失败: {e}"))? {
+    /// 从公开 GitHub URL 导入自定义 Power（对应 Kiro `addCustomPowerByUrl`）。
+    ///
+    /// `url` 支持形式：
+    /// - `https://github.com/<owner>/<repo>`
+    /// - `https://github.com/<owner>/<repo>/tree/<branch>/<sub/dir>`
+    ///
+    /// 名称推导与 Kiro 一致：有子目录取子目录末段，否则取 repo 名，再 sanitize。
+    /// 安装成功后写入 `registries/user-added.json` 与 `installed.json`。
+    pub fn install_from_github_url(url: &str) -> Result<String, String> {
+        let (clone_url, branch, path_in_repo, name) = Self::parse_github_url(url)?;
+
+        Self::validate_power_name(&name)?;
+        Self::validate_clone_url(&clone_url)?;
+        Self::validate_branch_name(&branch)?;
+
+        // 先安装（内部会 clone + 复制 + 写 installed.json）
+        Self::install(
+            &name,
+            &clone_url,
+            &path_in_repo,
+            &branch,
+            REGISTRY_ID_USER_ADDED,
+        )?;
+
+        // 再登记 user-added 注册表；失败则回滚已安装产物，避免出现"装了但 Kiro 不认识"
+        let entry = UserAddedPowerEntry {
+            name: name.clone(),
+            description: format!("Custom power from {url}"),
+            repository_url: Some(url.to_string()),
+            source: PowerSource::Repo {
+                repository_clone_url: clone_url,
+                path_in_repo,
+                repository_branch: branch,
+            },
+        };
+        if let Err(e) = Self::upsert_user_added_entry(entry) {
+            let _ = Self::uninstall(&name);
+            return Err(format!("写入 user-added 注册表失败: {e}"));
+        }
+
+        Ok(name)
+    }
+
+    /// 解析 GitHub URL，返回 (clone_url, branch, path_in_repo, power_name)
+    fn parse_github_url(url: &str) -> Result<(String, String, String, String), String> {
+        let trimmed = url.trim();
+        if trimmed.is_empty() {
+            return Err("URL 不能为空".to_string());
+        }
+
+        let normalized = Self::convert_to_https_url(trimmed);
+        let without_scheme = normalized
+            .strip_prefix("https://")
+            .or_else(|| normalized.strip_prefix("http://"))
+            .unwrap_or(&normalized);
+
+        let mut segments = without_scheme.split('/').filter(|s| !s.is_empty());
+        let host = segments.next().unwrap_or_default().to_ascii_lowercase();
+        if host != "github.com" && host != "www.github.com" {
+            return Err("仅支持 github.com 上的公开仓库".to_string());
+        }
+
+        let owner = segments.next().unwrap_or_default().to_string();
+        let repo_raw = segments.next().unwrap_or_default().to_string();
+        if owner.is_empty() || repo_raw.is_empty() {
+            return Err("URL 必须包含 owner/repo".to_string());
+        }
+        let repo = repo_raw.trim_end_matches(".git").to_string();
+
+        // 剩余段：可能形如 tree/<branch>/<sub/dir...>
+        let rest: Vec<&str> = segments.collect();
+        let (branch, path_in_repo) = if rest.first() == Some(&"tree") && rest.len() >= 2 {
+            let b = rest[1].to_string();
+            let p = rest[2..].join("/");
+            (b, p)
+        } else {
+            (String::new(), String::new())
+        };
+
+        // 名称推导：有子目录取末段，否则取 repo 名
+        let raw_name = if path_in_repo.is_empty() {
+            repo.clone()
+        } else {
+            path_in_repo
+                .rsplit('/')
+                .next()
+                .unwrap_or(&repo)
+                .to_string()
+        };
+        let name: String = raw_name
+            .to_lowercase()
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '-' })
+            .collect();
+        let name = name.trim_matches('-').to_string();
+        if name.is_empty() {
+            return Err("无法从 URL 推导出合法的 Power 名称".to_string());
+        }
+
+        let clone_url = format!("https://github.com/{owner}/{repo}.git");
+        Ok((clone_url, branch, path_in_repo, name))
+    }
+
+    /// 安装本地文件夹中的 Power（对应 Kiro `addCustomPowerByFolder`）。
+    ///
+    /// 流程（与 Kiro 一致）：
+    /// 1. 校验源目录是合法 Power（含 `plugin.json` 或 `POWER.md`）；
+    /// 2. 名称取目录名 sanitize 后的结果；目标已存在则视为已安装并跳过；
+    /// 3. 复制清单文件 + `steering/` 下的 `.md` 到 `~/.kiro/powers/installed/<name>/`；
+    /// 4. 登记到 `registries/user-added.json`（registryId = "user-added"）；
+    /// 5. 写入 `installed.json`；任一步失败则回滚注册表与安装目录。
+    ///
+    /// 返回实际安装使用的 Power 名称（可能因 sanitize 与目录名不同）。
+    pub fn install_from_local(source_dir: &str) -> Result<String, String> {
+        let dir = Self::powers_dir().ok_or("无法获取用户目录")?;
+        let source = Path::new(source_dir);
+
+        Self::validate_power_dir(source)?;
+
+        let name = Self::derive_power_name(source)?;
+        Self::validate_power_name(&name)?;
+
+        let installed_base = dir.join("installed");
+        let install_path = Self::safe_power_subdir(&installed_base, &name)?;
+
+        if install_path.exists() {
+            // 与 Kiro 一致：已安装则提示而非覆盖，避免抹掉用户改动
+            return Err(format!("Power 已安装: {name}"));
+        }
+
+        // 源目录必须在安装目录之外，避免自拷贝导致递归
+        if let (Ok(src_canon), Ok(powers_canon)) = (fs::canonicalize(source), fs::canonicalize(&dir))
+        {
+            if src_canon.starts_with(&powers_canon) {
+                return Err("不能从 Kiro 的 powers 目录内部导入 Power".to_string());
+            }
+        }
+
+        // 1) 复制文件
+        fs::create_dir_all(&install_path).map_err(|e| format!("创建安装目录失败: {e}"))?;
+        if let Err(e) = Self::copy_power_files(source, &install_path) {
+            let _ = fs::remove_dir_all(&install_path);
+            return Err(e);
+        }
+
+        // 2) 登记 user-added 注册表；失败则回滚已复制的目录
+        let entry = UserAddedPowerEntry {
+            name: name.clone(),
+            description: format!("Custom power from {}", source.display()),
+            repository_url: None,
+            source: PowerSource::Local {
+                path: source.to_string_lossy().to_string(),
+            },
+        };
+        if let Err(e) = Self::upsert_user_added_entry(entry) {
+            let _ = fs::remove_dir_all(&install_path);
+            return Err(format!("写入 user-added 注册表失败: {e}"));
+        }
+
+        // 3) 写入 installed.json
+        let mut installed = Self::load_installed()?;
+        if !installed.installed_powers.iter().any(|e| e.name == name) {
+            installed.installed_powers.push(InstalledPowerEntry {
+                name: name.clone(),
+                registry_id: REGISTRY_ID_USER_ADDED.to_string(),
+                auto_installed: false,
+            });
+        }
+        installed.dismissed_auto_installs.retain(|d| d.name != name);
+        if let Err(e) = Self::save_installed(&installed) {
+            let _ = fs::remove_dir_all(&install_path);
+            let _ = Self::remove_user_added_entry(&name);
+            return Err(format!("更新 installed.json 失败: {e}"));
+        }
+
+        Ok(name)
+    }
+
+    /// 复制 Power 文件到安装目录（对应 Kiro `copyPowerFiles`）。
+    ///
+    /// 只复制 Kiro 认可的载荷，不整目录搬运：
+    /// - 根目录清单文件：`POWER.md`、`plugin.json`、`mcp.json`
+    /// - `steering/` 目录下的全部 `.md`（递归，跳过符号链接）
+    ///
+    /// 不复制 `.git`、`README.md`、`LICENSE` 等仓库元数据——Kiro 亦不复制。
+    fn copy_power_files(source: &Path, target: &Path) -> Result<(), String> {
+        const ROOT_MANIFESTS: &[&str] = &["POWER.md", "plugin.json", "mcp.json"];
+
+        for file in ROOT_MANIFESTS {
+            let src = source.join(file);
+            if src.is_file() {
+                fs::copy(&src, target.join(file))
+                    .map_err(|e| format!("复制 {file} 失败: {e}"))?;
+            }
+        }
+
+        // steering/ 递归复制 .md
+        let steering_src = source.join("steering");
+        if steering_src.is_dir() {
+            Self::copy_md_dir_recursive(&steering_src, &target.join("steering"))?;
+        }
+
+        // plugin.json 形态的 Power 可能把内容放在其他子目录，按 Kiro 语义仅补充 .md
+        for sub in &["instructions", "docs"] {
+            let sub_src = source.join(sub);
+            if sub_src.is_dir() {
+                Self::copy_md_dir_recursive(&sub_src, &target.join(sub))?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 递归复制目录下的 `.md` 文件（跳过符号链接与复制目录，避免逃逸）
+    fn copy_md_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
+        fs::create_dir_all(dst).map_err(|e| format!("创建目录失败: {e}"))?;
+        for entry in fs::read_dir(src).map_err(|e| format!("读取目录失败: {e}"))? {
             let entry = entry.map_err(|e| format!("读取条目失败: {e}"))?;
             let src_path = entry.path();
             let dst_path = dst.join(entry.file_name());
@@ -585,7 +792,7 @@ impl PowersManager {
                 continue;
             }
             if metadata.is_dir() {
-                Self::copy_steering_dir(&src_path, &dst_path)?;
+                Self::copy_md_dir_recursive(&src_path, &dst_path)?;
             } else if metadata.is_file() && src_path.extension().is_some_and(|e| e == "md") {
                 fs::copy(&src_path, &dst_path).map_err(|e| format!("复制文件失败: {e}"))?;
             }
@@ -593,7 +800,7 @@ impl PowersManager {
         Ok(())
     }
 
-    /// 卸载 Power（删除目录 + 从 installed.json 中移除）
+    /// 卸载 Power（删除目录 + 从 installed.json / user-added 注册表中移除）
     pub fn uninstall(name: &str) -> Result<(), String> {
         let dir = Self::powers_dir().ok_or("无法获取用户目录")?;
         let installed_base = dir.join("installed");
@@ -618,10 +825,17 @@ impl PowersManager {
         }
         Self::save_installed(&installed)?;
 
+        // 若来自自定义来源，同步清理 user-added 注册表，避免残留失效条目
+        // （忽略错误：注册表不存在或未登记该条目都属正常情形）
+        let _ = Self::remove_user_added_entry(name);
+
         Ok(())
     }
 
-    /// 获取注册表列表（registries/ 目录下的 .json 文件）
+    /// 获取注册表列表（registries/ 目录下的 .json 文件）。
+    ///
+    /// 跳过 `user-added.json`：它承载的是用户自建来源（本地/GitHub），
+    /// 在 Kiro 中作为独立的 "Custom Powers" 展示，而非一个可浏览的注册表。
     pub fn list_registries() -> Result<Vec<RegistryInfo>, String> {
         let dir = Self::powers_dir().ok_or("无法获取用户目录")?;
         let reg_dir = dir.join("registries");
@@ -642,6 +856,9 @@ impl PowersManager {
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
+            if file_name == "user-added.json" {
+                continue;
+            }
             let id = file_name.trim_end_matches(".json").to_string();
             let content = fs::read_to_string(&path).unwrap_or_default();
             let parsed: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
@@ -717,6 +934,155 @@ pub struct RecommendedRegistryResponse {
 
 const RECOMMENDED_REGISTRY_URL: &str =
     "https://prod.download.desktop.kiro.dev/powers/default_registry.json";
+
+/// Kiro 内置注册表 ID 常量（与 IDE 实现一致）
+const REGISTRY_ID_RECOMMENDED: &str = "kiro-recommended";
+const REGISTRY_ID_USER_ADDED: &str = "user-added";
+
+/// Power 来源：本地文件夹 或 git 仓库。
+/// 对应 Kiro `addCustomPower` 的两条导入路径（folder / url）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum PowerSource {
+    /// 本地文件夹来源：`{ "type": "local", "path": "<绝对路径>" }`
+    #[serde(rename = "local")]
+    Local { path: String },
+    /// git 仓库来源：`{ "type": "repo", "repositoryCloneUrl": ..., "pathInRepo": ..., "repositoryBranch": ... }`
+    #[serde(rename = "repo")]
+    Repo {
+        #[serde(default, rename = "repositoryCloneUrl")]
+        repository_clone_url: String,
+        #[serde(default, rename = "pathInRepo")]
+        path_in_repo: String,
+        #[serde(default, rename = "repositoryBranch")]
+        repository_branch: String,
+    },
+}
+
+/// `registries/user-added.json` 中的自定义 Power 条目。
+/// 字段名遵循 Kiro registry schema：name / description / source（+ 可选 repositoryUrl）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserAddedPowerEntry {
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default, rename = "repositoryUrl", skip_serializing_if = "Option::is_none")]
+    pub repository_url: Option<String>,
+    /// 来源信息；缺失时退化为「未知本地来源」而非让整表解析失败
+    #[serde(default)]
+    pub source: PowerSource,
+}
+
+impl Default for PowerSource {
+    fn default() -> Self {
+        PowerSource::Local {
+            path: String::new(),
+        }
+    }
+}
+
+/// `registries/user-added.json` 文件结构
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct UserAddedRegistry {
+    #[serde(default)]
+    pub powers: Vec<UserAddedPowerEntry>,
+}
+
+impl PowersManager {
+    /// `~/.kiro/powers/registries/user-added.json`
+    ///
+    /// 仅用于记录**自定义**（本地文件夹 / GitHub URL）Power 的来源，
+    /// 以便 Kiro 侧能识别并支持「检查更新」。内置推荐源走 registry.json。
+    pub fn user_added_registry_path() -> Result<PathBuf, String> {
+        let dir = Self::powers_dir().ok_or("无法获取用户目录")?;
+        Ok(dir.join("registries").join("user-added.json"))
+    }
+
+    /// 读取 user-added 注册表（不存在或损坏时返回空表，与 Kiro 行为一致）
+    pub fn load_user_added_registry() -> Result<UserAddedRegistry, String> {
+        let path = Self::user_added_registry_path()?;
+        if !path.exists() {
+            return Ok(UserAddedRegistry::default());
+        }
+        let content = match fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => return Ok(UserAddedRegistry::default()),
+        };
+        // Kiro 在解析失败时打 warn 并新建空表，而非抛错
+        Ok(serde_json::from_str(&content).unwrap_or_default())
+    }
+
+    /// 原子写入 user-added 注册表（先写 .tmp 再 rename，与 Kiro 实现一致）
+    pub fn save_user_added_registry(registry: &UserAddedRegistry) -> Result<(), String> {
+        let path = Self::user_added_registry_path()?;
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("创建 registries 目录失败: {e}"))?;
+        }
+        let content =
+            serde_json::to_string_pretty(registry).map_err(|e| format!("序列化注册表失败: {e}"))?;
+        let tmp = path.with_extension("json.tmp");
+        fs::write(&tmp, content).map_err(|e| format!("写入注册表临时文件失败: {e}"))?;
+        fs::rename(&tmp, &path).map_err(|e| format!("提交注册表失败: {e}"))
+    }
+
+    /// 向 user-added 注册表插入或更新条目（同名则合并，与 Kiro `addPowerToUserAddedRegistry` 一致）
+    fn upsert_user_added_entry(entry: UserAddedPowerEntry) -> Result<(), String> {
+        let mut registry = Self::load_user_added_registry()?;
+        if let Some(existing) = registry.powers.iter_mut().find(|p| p.name == entry.name) {
+            *existing = entry;
+        } else {
+            registry.powers.push(entry);
+        }
+        Self::save_user_added_registry(&registry)
+    }
+
+    /// 从 user-added 注册表移除条目，返回是否确实删除
+    fn remove_user_added_entry(name: &str) -> Result<bool, String> {
+        let mut registry = Self::load_user_added_registry()?;
+        let before = registry.powers.len();
+        registry.powers.retain(|p| p.name != name);
+        if registry.powers.len() < before {
+            Self::save_user_added_registry(&registry)?;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    /// 校验目录是否为一个合法 Power（对应 Kiro `isValidPowerDir`）。
+    ///
+    /// 判据（任一满足即可）：
+    /// - 存在 `plugin.json`（新版 agent plugin 形态）
+    /// - 存在 `POWER.md`（旧版 legacy 形态）
+    pub fn validate_power_dir(dir: &Path) -> Result<(), String> {
+        if !dir.is_dir() {
+            return Err(format!("路径不是一个目录: {}", dir.display()));
+        }
+        if dir.join("plugin.json").is_file() || dir.join("POWER.md").is_file() {
+            return Ok(());
+        }
+        Err("所选文件夹不是合法的 Power 目录：需包含 plugin.json 或 POWER.md".to_string())
+    }
+
+    /// 由目录名推导 Power 名称（对应 Kiro：basename 转小写，非字母数字与连字符替换为 `-`）
+    pub fn derive_power_name(dir: &Path) -> Result<String, String> {
+        let base = dir
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let sanitized: String = base
+            .to_lowercase()
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '-' })
+            .collect();
+        let sanitized = sanitized.trim_matches('-').to_string();
+        if sanitized.is_empty() {
+            return Err("无法从所选文件夹名推导出合法的 Power 名称".to_string());
+        }
+        Ok(sanitized)
+    }
+}
 
 impl PowersManager {
     /// 拉取推荐 Powers 列表，并标记已安装状态
