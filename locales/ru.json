@@ -356,6 +356,8 @@
   "settings.agentRemoteSessionsEndpoint": "Адрес портала удалённых сессий",
   "settings.agentRemoteSessionsEndpointDesc": "Базовый адрес облачного портала Kiro, используется для «Открыть удалённую сессию в браузере». Оставьте пустым, чтобы использовать встроенное значение https://app.kiro.dev. Этот ключ не объявлен в схеме конфигурации Kiro (скрытый ключ), но он работает.",
   "settings.agentRemoteSessionsEndpointInvalid": "Введите корректный адрес http/https, например https://app.kiro.dev",
+  "settings.agentRemoteSessionsEnvOverride": "Текущее значение переопределено переменной окружения",
+  "settings.agentRemoteSessionsEnvOverrideDesc": "Переменная окружения KIRO_REMOTE_SESSIONS_ENDPOINT имеет приоритет над указанным здесь адресом, и применяется именно она. Чтобы эта настройка вступила в силу, удалите переменную окружения и перезапустите Kiro.",
   "settings.agentStartupMode": "Режим запуска",
   "settings.agentStartupModeDesc": "Какой раздел Kiro открывает при запуске по умолчанию",
   "settings.agentStartupMode_code": "Редактор кода",

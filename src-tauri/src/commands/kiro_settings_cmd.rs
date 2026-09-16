@@ -661,6 +661,29 @@ pub async fn read_cloud_config_enabled() -> Result<bool, String> {
     run_kiro_blocking(read_cloud_config_enabled_inner).await
 }
 
+/// 读取会覆盖 `kiroAgent.remoteSessions.endpoint` 的环境变量。
+///
+/// Kiro 扩展侧（`kiro.kiro-agent`）解析远程会话门户基址时是三级回落：
+/// ```text
+/// process.env.KIRO_REMOTE_SESSIONS_ENDPOINT  >  settings.json 配置项  >  内置默认
+/// ```
+/// 即**环境变量优先级高于用户在设置里填的值**。由于该键未在 IDE 的
+/// `registerConfiguration` 中声明，用户既看不到它、也不知道有环境变量这一层，
+/// 一旦命中就会表现为「改了配置但不生效，且毫无线索」。
+///
+/// 故单独暴露一个只读查询，供设置面板判断是否需要提示「当前值被环境变量覆盖」。
+///
+/// 返回：`Some(值)` = 环境变量存在且 trim 后非空（即为实际生效来源）；
+///       `None` = 未设置，配置项正常生效。
+#[tauri::command]
+pub async fn read_remote_sessions_env_override() -> Result<Option<String>, String> {
+    // 与扩展侧 `eUt()` 的判定保持一致：先 trim，空串视为未设置
+    Ok(std::env::var("KIRO_REMOTE_SESSIONS_ENDPOINT")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty()))
+}
+
 #[tauri::command]
 pub async fn set_kiro_proxy(proxy: String) -> Result<(), String> {
     run_kiro_blocking(move || set_kiro_proxy_inner(proxy)).await

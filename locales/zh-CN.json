@@ -351,6 +351,8 @@
   "settings.agentRemoteSessionsEndpoint": "远程会话门户地址",
   "settings.agentRemoteSessionsEndpointDesc": "Kiro 云门户的地址基址，用于「在浏览器中打开远程会话」。留空则使用内置默认值 https://app.kiro.dev。该键在 Kiro 的配置声明中不存在，属隐藏键，但不影响其生效。",
   "settings.agentRemoteSessionsEndpointInvalid": "请输入合法的 http/https 地址，例如 https://app.kiro.dev",
+  "settings.agentRemoteSessionsEnvOverride": "当前值已被环境变量覆盖",
+  "settings.agentRemoteSessionsEnvOverrideDesc": "环境变量 KIRO_REMOTE_SESSIONS_ENDPOINT 的优先级高于此处填写的地址，实际生效的是它。要让此处的配置生效，请先移除该环境变量并重启 Kiro。",
   "settings.agentStartupMode": "启动模式",
   "settings.agentStartupModeDesc": "Kiro 启动时默认进入的界面",
   "settings.agentStartupMode_code": "代码编辑器",

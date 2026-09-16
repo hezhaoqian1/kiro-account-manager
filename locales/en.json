@@ -352,6 +352,8 @@
   "settings.agentRemoteSessionsEndpoint": "Remote sessions portal URL",
   "settings.agentRemoteSessionsEndpointDesc": "Base URL of the Kiro cloud portal, used for \"Open remote session in browser\". Leave empty to use the built-in default https://app.kiro.dev. This key is not declared in Kiro's configuration schema (it is a hidden key), but it does take effect.",
   "settings.agentRemoteSessionsEndpointInvalid": "Enter a valid http/https URL, for example https://app.kiro.dev",
+  "settings.agentRemoteSessionsEnvOverride": "Current value is overridden by an environment variable",
+  "settings.agentRemoteSessionsEnvOverrideDesc": "The environment variable KIRO_REMOTE_SESSIONS_ENDPOINT takes precedence over the URL entered here, and that is what actually takes effect. To make this configuration apply, remove the environment variable and restart Kiro.",
   "settings.agentStartupMode": "Startup mode",
   "settings.agentStartupModeDesc": "Which view Kiro opens by default on launch",
   "settings.agentStartupMode_code": "Code editor",

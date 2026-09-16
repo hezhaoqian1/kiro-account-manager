@@ -39,6 +39,13 @@ export function readCloudConfigEnabled() {
   return invoke<boolean>('read_cloud_config_enabled')
 }
 
+// 读取会覆盖 kiroAgent.remoteSessions.endpoint 的环境变量
+// （KIRO_REMOTE_SESSIONS_ENDPOINT）。该变量优先级高于 settings.json 里的配置项，
+// 返回非 null 表示配置项当前不生效。
+export function readRemoteSessionsEnvOverride() {
+  return invoke<string | null>('read_remote_sessions_env_override')
+}
+
 // 用系统默认程序打开 Kiro IDE 的 settings.json（文件不存在时会先创建）
 export function openKiroSettingsFile() {
   return invoke('open_kiro_settings_file')

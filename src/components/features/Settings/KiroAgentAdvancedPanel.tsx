@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Bot, ShieldCheck, FlaskConical } from 'lucide-react'
+import { Bot, ShieldCheck, FlaskConical, AlertTriangle } from 'lucide-react'
 import { Input } from '../../ui/input'
 import { Textarea } from '../../ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select'
@@ -7,7 +7,7 @@ import { Label } from '../../ui/label'
 import SectionCard from './SectionCard'
 import ToggleRow from './ToggleRow'
 import { useDialog } from '../../../contexts/DialogContext'
-import { getKiroSettings, setKiroAgentSetting } from '../../../api/settingsApi'
+import { getKiroSettings, setKiroAgentSetting, readRemoteSessionsEnvOverride } from '../../../api/settingsApi'
 
 // Kiro 1.0 Agent 高级设置面板。
 //
@@ -69,6 +69,8 @@ const TRUST_SCOPES = ['user', 'workspace', 'session'] as const
 export default function KiroAgentAdvancedPanel({ t }: { t: (key: string) => string }) {
   const { showError } = useDialog()
   const [s, setS] = useState<AdvancedState>(DEFAULTS)
+  // 覆盖远程会话门户基址的环境变量值；非 null 表示配置项当前不生效
+  const [envOverride, setEnvOverride] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -94,6 +96,12 @@ export default function KiroAgentAdvancedPanel({ t }: { t: (key: string) => stri
               ? v.remoteSessionsEndpoint
               : '',
         })
+      })
+      .catch(() => {})
+    // 单独查询环境变量覆盖情况：该变量优先级高于 settings.json，命中时配置项失效
+    readRemoteSessionsEnvOverride()
+      .then(v => {
+        if (!cancelled) setEnvOverride(v)
       })
       .catch(() => {})
     return () => {
@@ -293,6 +301,18 @@ export default function KiroAgentAdvancedPanel({ t }: { t: (key: string) => stri
             <p className="text-[11px] text-muted-foreground mt-1">
               {t('settings.agentRemoteSessionsEndpointDesc')}
             </p>
+            {/* 环境变量覆盖警示：KIRO_REMOTE_SESSIONS_ENDPOINT 优先级高于此处的配置项，
+                命中时此处的值不生效，必须显式告知用户，否则表现为「改了没反应且无线索」 */}
+            {envOverride && (
+              <div className="mt-2 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-2">
+                <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-500" />
+                <div className="text-[11px] leading-relaxed text-amber-700 dark:text-amber-400">
+                  <p className="font-medium">{t('settings.agentRemoteSessionsEnvOverride')}</p>
+                  <p className="mt-0.5 break-all font-mono opacity-90">{envOverride}</p>
+                  <p className="mt-1 opacity-80">{t('settings.agentRemoteSessionsEnvOverrideDesc')}</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </SectionCard>
