@@ -57,6 +57,9 @@ pub struct AppSettings {
     pub experiments_workspace_manager: Option<bool>,
     pub editor_actions_prompts: Option<serde_json::Value>,
     pub startup_mode: Option<String>,
+    // Kiro 云门户基址（kiroAgent.remoteSessions.endpoint）。
+    // None = 未设置，此时 IDE 回落内置默认 https://app.kiro.dev
+    pub remote_sessions_endpoint: Option<String>,
     // 同在 settings.json 里、app 也读写的两个键（模型选择 / IDE 代理），同样双向同步
     pub model_selection: Option<String>,
     pub http_proxy: Option<String>,
@@ -124,6 +127,8 @@ impl Default for AppSettings {
             experiments_workspace_manager: Some(false),
             editor_actions_prompts: None,
             startup_mode: Some("code".to_string()),
+            // 默认 None（未设置），让 IDE 自己的默认值生效，不替用户做决定
+            remote_sessions_endpoint: None,
             model_selection: None,
             http_proxy: None,
             custom_kiro_path: None,
@@ -188,6 +193,7 @@ impl AppSettings {
         apply_if_some!(experiments_workspace_manager);
         apply_if_some!(editor_actions_prompts);
         apply_if_some!(startup_mode);
+        apply_if_some!(remote_sessions_endpoint);
         apply_if_some!(model_selection);
         apply_if_some!(http_proxy);
         apply_if_some!(custom_kiro_path);

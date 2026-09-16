@@ -53,6 +53,14 @@ pub struct KiroSettings {
     pub telemetry_edit_stats_decorations: bool, // 编辑器内编辑统计装饰
     pub telemetry_edit_stats_status_bar: bool, // 状态栏编辑统计
     pub startup_mode: Option<String>, // "code" | "agentFocus"
+    // === 远程会话门户 ===
+    // `kiroAgent.remoteSessions.endpoint`：Kiro 云门户（Cloud Portal）的 origin 基址。
+    // 用途：会话来源为 remote 时，生成「在浏览器打开」的跳转链接
+    //   `${endpoint}/session/${sessionId}`。
+    // 注意：该键**未在 IDE 的 registerConfiguration 中声明**，属隐藏键，
+    // 只能由 config.getValue() 消费；默认值 https://app.kiro.dev 由代码兜底
+    // （IDE 会 trim 并去掉尾部斜杠，空值回落默认）。
+    pub remote_sessions_endpoint: Option<String>,
 }
 
 impl Default for KiroSettings {
@@ -93,6 +101,8 @@ impl Default for KiroSettings {
             telemetry_edit_stats_decorations: false,
             telemetry_edit_stats_status_bar: false,
             startup_mode: Some("code".to_string()),
+            // 留空表示「用 IDE 内置默认」，不主动写盘该键
+            remote_sessions_endpoint: None,
         }
     }
 }
@@ -215,6 +225,15 @@ fn get_string_array_opt(json: &serde_json::Value, key: &str) -> Option<Vec<Strin
             .filter_map(|item| item.as_str().map(String::from))
             .collect()
     })
+}
+
+/// 规范化远程门户 endpoint：与 Kiro IDE 的 `Cro()` 行为保持一致——
+/// 先 trim，再去掉末尾的全部 `/`。
+///
+/// IDE 侧另有「空值回落 `https://app.kiro.dev`」的兜底，本函数只做规范化，
+/// 是否回落默认由各调用处决定（读取处兜底展示、保存处视为清空设置）。
+fn normalize_endpoint(raw: &str) -> String {
+    raw.trim().trim_end_matches('/').to_string()
 }
 
 fn get_kiro_settings_inner() -> Result<KiroSettings, String> {
@@ -389,6 +408,25 @@ fn get_kiro_settings_inner() -> Result<KiroSettings, String> {
         "kiroAgent.experiments.workspaceManager",
         false
     );
+
+    // remoteSessions.endpoint：隐藏键，IDE 侧默认 https://app.kiro.dev。
+    // 刻意**不**把默认值回写 settings.json：该键在 IDE 配置声明中不存在，
+    // 凭空写入只会污染用户配置，且 IDE 对空值本就回落默认。
+    // 故此处仅做「读 + 展示兜底」：未设置时给 UI 默认值，但不落盘。
+    const REMOTE_SESSIONS_DEFAULT: &str = "https://app.kiro.dev";
+    let remote_sessions_endpoint = {
+        let ide = get_string_value(&json, "kiroAgent.remoteSessions.endpoint")
+            .map(|s| normalize_endpoint(&s))
+            .filter(|s| !s.is_empty());
+        // 仅在用户/IDE 确有值时才同步进 app-settings，None 表示未设置
+        let value = ide.or_else(|| app_settings.remote_sessions_endpoint.clone());
+        if app_settings.remote_sessions_endpoint != value {
+            app_settings.remote_sessions_endpoint = value.clone();
+            app_dirty = true;
+        }
+        // 返回给 UI 的值：未设置时展示 IDE 默认，便于用户知道当前生效目标
+        Some(value.unwrap_or_else(|| REMOTE_SESSIONS_DEFAULT.to_string()))
+    };
     let agent_ignore_files = sync2way_list!(agent_ignore_files, "kiroAgent.agentIgnoreFiles");
     let mcp_approved_env_vars =
         sync2way_list!(mcp_approved_env_vars, "kiroAgent.mcpApprovedEnvVars");
@@ -517,6 +555,7 @@ fn get_kiro_settings_inner() -> Result<KiroSettings, String> {
         experiments_workspace_manager,
         editor_actions_prompts,
         startup_mode: Some(startup_mode),
+        remote_sessions_endpoint,
     })
 }
 
@@ -844,6 +883,13 @@ fn sync_to_app_settings(key: &str, value: &serde_json::Value) {
         "kiro.startupMode" => {
             app.startup_mode = value.as_str().map(String::from);
         }
+        // 远程会话门户基址；null 或空串视为「清空设置」（IDE 将回落默认 http://app.kiro.dev）
+        "kiroAgent.remoteSessions.endpoint" => {
+            app.remote_sessions_endpoint = value
+                .as_str()
+                .map(normalize_endpoint)
+                .filter(|s| !s.is_empty());
+        }
         "telemetry.dataSharingAndPromptLogging.promptLogging" => {
             app.telemetry_prompt_logging = value.as_bool();
         }
@@ -924,6 +970,9 @@ pub async fn set_kiro_agent_setting(key: String, value: serde_json::Value) -> Re
         "kiroAgent.experiments.workspaceManager",
         "kiroAgent.editorActions.prompts",
         "kiro.startupMode",
+        // 隐藏键（未在 IDE registerConfiguration 中声明），但确有实际作用：
+        // 决定「在浏览器打开远程会话」的跳转地址
+        "kiroAgent.remoteSessions.endpoint",
     ];
     if !ALLOWED.contains(&key.as_str()) {
         return Err(format!("不允许的 Kiro Agent key: {key}"));

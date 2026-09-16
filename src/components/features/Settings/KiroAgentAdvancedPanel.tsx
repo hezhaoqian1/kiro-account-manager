@@ -36,6 +36,10 @@ interface AdvancedState {
   experimentsCloudConfig: boolean
   experimentsWorkspaceManager: boolean
   editorActionsPrompts: string // JSON 文本
+  // 远程会话门户基址。空串 = 未设置（写 null 删除键，IDE 回落 https://app.kiro.dev）。
+  // 该键未在 IDE configuration 中声明，属隐藏键，故默认值留空而非填 IDE 默认值，
+  // 避免「看起来设置了」却实际从未落盘的错觉。
+  remoteSessionsEndpoint: string
 }
 
 const DEFAULTS: AdvancedState = {
@@ -49,9 +53,14 @@ const DEFAULTS: AdvancedState = {
   experimentsCloudConfig: false,
   experimentsWorkspaceManager: false,
   editorActionsPrompts: '',
+  remoteSessionsEndpoint: '',
 }
 
 const lines = (v: string) => v.split('\n').map(s => s.trim()).filter(Boolean)
+
+// Kiro IDE 对 kiroAgent.remoteSessions.endpoint 的内置默认（代码兜底，非 configuration 声明）。
+// 用于把「后端兜底展示的默认值」与「用户真实设置的值」区分开。
+const REMOTE_SESSIONS_DEFAULT = 'https://app.kiro.dev'
 
 const TOOL_CARD_MODES = ['collapseOnComplete', 'alwaysExpanded'] as const
 const TRUST_PATTERNS = ['full', 'partial', 'base'] as const
@@ -77,6 +86,13 @@ export default function KiroAgentAdvancedPanel({ t }: { t: (key: string) => stri
           experimentsCloudConfig: v.experimentsCloudConfig ?? false,
           experimentsWorkspaceManager: v.experimentsWorkspaceManager ?? false,
           editorActionsPrompts: v.editorActionsPrompts ? JSON.stringify(v.editorActionsPrompts, null, 2) : '',
+          // 后端在未设置时会返回 IDE 默认值用于展示。此处回吐为空串，
+          // 让输入框的 placeholder 承担「当前生效默认」的提示职责，
+          // 避免用户误以为该值已被显式写入 settings.json。
+          remoteSessionsEndpoint:
+            v.remoteSessionsEndpoint && v.remoteSessionsEndpoint !== REMOTE_SESSIONS_DEFAULT
+              ? v.remoteSessionsEndpoint
+              : '',
         })
       })
       .catch(() => {})
@@ -124,6 +140,30 @@ export default function KiroAgentAdvancedPanel({ t }: { t: (key: string) => stri
     } catch (err) {
       await showError(t('settings.saveFailed'), `${t('settings.agentJsonInvalid')}: ${err}`)
     }
+  }
+
+  /// 提交远程会话门户基址。
+  /// - 空串 → 写 null 删除该键，Kiro 回落内置默认（https://app.kiro.dev）
+  /// - 非空 → 做基本 URL 校验（必须是 http/https 绝对地址），再落盘
+  /// 后端同样会做 trim 与去尾斜杠规范化，与 IDE 的 Cro() 行为一致。
+  const applyRemoteSessionsEndpoint = async () => {
+    const raw = s.remoteSessionsEndpoint.trim()
+    if (raw === '') {
+      await apply('kiroAgent.remoteSessions.endpoint', null)
+      return
+    }
+    let ok = false
+    try {
+      const u = new URL(raw)
+      ok = u.protocol === 'http:' || u.protocol === 'https:'
+    } catch {
+      ok = false
+    }
+    if (!ok) {
+      await showError(t('settings.saveFailed'), t('settings.agentRemoteSessionsEndpointInvalid'))
+      return
+    }
+    await apply('kiroAgent.remoteSessions.endpoint', raw)
   }
 
   return (
@@ -237,6 +277,22 @@ export default function KiroAgentAdvancedPanel({ t }: { t: (key: string) => stri
               rows={3}
             />
             <p className="text-[11px] text-muted-foreground mt-1">{t('settings.agentEditorActionsPromptsDesc')}</p>
+          </div>
+
+          <div>
+            <Label className="block text-[11px] text-muted-foreground mb-1">
+              {t('settings.agentRemoteSessionsEndpoint')}
+            </Label>
+            <Input
+              value={s.remoteSessionsEndpoint}
+              onChange={e => patch({ remoteSessionsEndpoint: e.target.value })}
+              onBlur={applyRemoteSessionsEndpoint}
+              placeholder={REMOTE_SESSIONS_DEFAULT}
+              className="text-xs"
+            />
+            <p className="text-[11px] text-muted-foreground mt-1">
+              {t('settings.agentRemoteSessionsEndpointDesc')}
+            </p>
           </div>
         </div>
       </SectionCard>
