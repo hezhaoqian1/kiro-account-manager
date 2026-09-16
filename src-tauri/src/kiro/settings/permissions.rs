@@ -15,12 +15,127 @@
 //     - "some-preset"
 // 文件位置（与 IDE 的 MOi 解析逻辑一致）：
 //   全局： ~/.kiro/settings/permissions.yaml  (回退 permissions.json)
-//   项目： ~/.kiro/workspace-roots/<workspace-id>/permissions.yaml
-// 本项目当前只适配全局作用域（与旧 Trusted Commands 的全局性质一致）；项目级需要
-// 复刻 IDE 的 workspace-id (sha256 截断) 哈希，留作后续工作。
+//   项目： ~/.kiro/workspace-roots/<workspace-id>/permissions.yaml  (回退 permissions.json)
+//
+// 自 1.1.14 适配起同时支持**全局**与**项目**两级作用域。项目级的 workspace-id
+// 算法由 IDE 构建产物逆向得出并经本机实测校验，见 `workspace_id_for`。
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
+
+/// 权限作用域。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PermissionScope {
+    /// 用户级：`~/.kiro/settings/`
+    Global,
+    /// 项目级：`~/.kiro/workspace-roots/<workspace-id>/`
+    /// 存的是项目真实路径，workspace-id 由 `resolve_workspace_id` 推导。
+    Project { project_path: String },
+}
+
+impl PermissionScope {
+    /// 前端传来的 scope 字符串 → 作用域。未知/空一律按全局处理（与历史行为一致）。
+    pub fn from_id(id: Option<&str>, project_path: Option<String>) -> Self {
+        match id.unwrap_or("global") {
+            "project" => match project_path.filter(|p| !p.trim().is_empty()) {
+                Some(p) => PermissionScope::Project { project_path: p },
+                // 声明为 project 却没给路径 → 退化为全局，避免写出到错误位置。
+                None => PermissionScope::Global,
+            },
+            _ => PermissionScope::Global,
+        }
+    }
+}
+
+/// 复刻 Kiro IDE 的 workspace-id 算法（1.1.14 逆向 + 本机实测）：
+///
+/// ```text
+/// workspace_id = sha256( 路径转小写 且 分隔符统一为 '/' )[:16]
+/// ```
+///
+/// 三个细节缺一不可，实测反例：
+/// - 盘符**保留**（`d:` 不去掉）
+/// - 大小写**必须**归一
+/// - 分隔符**必须**是 `/`（用 `\` 算出来的对不上）
+pub fn workspace_id_for(project_path: &str) -> String {
+    let normalized = project_path.to_lowercase().replace('\\', "/");
+    let digest = Sha256::digest(normalized.as_bytes());
+    hex::encode(digest)[..16].to_string()
+}
+
+/// `~/.kiro/workspace-roots`
+pub fn workspace_roots_dir() -> Option<PathBuf> {
+    dirs::home_dir().map(|home| home.join(".kiro").join("workspace-roots"))
+}
+
+/// 一个已存在的 workspace-root（即 IDE 至少为该项目建过一次目录）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WorkspaceRootInfo {
+    /// 目录名，即 16 位 workspace-id
+    pub id: String,
+    /// 项目真实路径；来自 `<id>/.trust-migration.json` 的 `root` 字段。
+    /// 迁移（1.0 时期）之后才加入的工作区没有该文件，故为 `None`。
+    pub project_path: Option<String>,
+    /// 该 workspace-root 下是否已存在非空的权限文件
+    pub has_permissions: bool,
+}
+
+/// 读取 `<workspace-root>/.trust-migration.json` 里的 `root` 字段。
+fn read_workspace_root_field(dir: &Path) -> Option<String> {
+    let content = std::fs::read_to_string(dir.join(".trust-migration.json")).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&content).ok()?;
+    value
+        .get("root")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+}
+
+/// 列出机器上所有已知 workspace-root。目录不存在 / 读失败都返回空列表。
+pub fn list_workspace_roots() -> Vec<WorkspaceRootInfo> {
+    let Some(dir) = workspace_roots_dir() else {
+        return Vec::new();
+    };
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+    let mut out: Vec<WorkspaceRootInfo> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            if !path.is_dir() {
+                return None;
+            }
+            let id = path.file_name()?.to_str()?.to_string();
+            let has_permissions = file_has_content(&path.join("permissions.yaml"))
+                || file_has_content(&path.join("permissions.json"));
+            Some(WorkspaceRootInfo {
+                id,
+                project_path: read_workspace_root_field(&path),
+                has_permissions,
+            })
+        })
+        .collect();
+    out.sort_by(|a, b| a.id.cmp(&b.id));
+    out
+}
+
+/// 求某个项目路径对应的 workspace-id。
+///
+/// 先在已知 workspace-root 里按 `.trust-migration.json` 记录的 `root` 精确匹配
+/// （大小写与分隔符不敏感）；匹配不到再按算法现算。这样即使 IDE 的哈希规则
+/// 将来微调，只要目录里留有 root 记录就仍然能对上。
+pub fn resolve_workspace_id(project_path: &str) -> String {
+    let needle = project_path.to_lowercase().replace('\\', "/");
+    for info in list_workspace_roots() {
+        if let Some(root) = &info.project_path {
+            if root.to_lowercase().replace('\\', "/") == needle {
+                return info.id;
+            }
+        }
+    }
+    workspace_id_for(project_path)
+}
 
 /// 单条权限规则。
 ///
@@ -48,19 +163,38 @@ pub struct PermissionPolicy {
     pub policies: Option<Vec<String>>,
 }
 
-/// IDE 1.0 已知的能力列表（用于前端下拉候选；同时允许自由输入未知值）。
-/// 来自 extension.js 的 capability 常量 + 实测 permissions.yaml 中出现的具体能力名。
-pub const KNOWN_CAPABILITIES: &[&str] = &[
+/// 1.1.14 实测确认存在的能力（前端下拉的**优先候选**）。
+///
+/// 依据：`dist/extension.js` 中 `capability:"…"` 字面量的频次统计：
+///   shell 24 · fs_write 8 · fs_read 5 · mcp 3 · subagent 2 · web_fetch 2 ·
+///   filesystem 2 · power 1 · context 1 · all 1 · web_search 1
+///
+/// ⚠️ 关键更正：1.1.14 中**不存在** `read` / `write`，真实名字是 `fs_read` / `fs_write`。
+/// 选错时 IDE 只会 warning 并**静默跳过该规则**（不报错），用户完全无感知——
+/// 所以这两个名字必须放在列表里，且排在前面。
+pub const VERIFIED_CAPABILITIES: &[&str] = &[
     "shell",
+    "fs_read",
+    "fs_write",
+    "mcp",
+    "subagent",
+    "web_fetch",
+    "web_search",
+    "context",
+    "filesystem",
+    "power",
+    "all",
+];
+
+/// 旧版（1.0.x）遗留的能力名，1.1.14 中**未实测到**。
+///
+/// 保留用于兼容仍在使用旧版 IDE 的用户；若当前 IDE 不认识，规则会被跳过。
+/// 前端展示时应排在 `VERIFIED_CAPABILITIES` 之后，避免用户误选。
+pub const LEGACY_CAPABILITIES: &[&str] = &[
     "read",
     "write",
     "web",
-    "web_fetch",
-    "web_search",
-    "subagent",
     "spec",
-    "context",
-    "mcp",
     "@mcp",
     "@powers",
     "@builtin",
@@ -73,22 +207,36 @@ fn permissions_dir() -> Option<PathBuf> {
     dirs::home_dir().map(|home| home.join(".kiro").join("settings"))
 }
 
-/// 解析权限文件路径，复刻 IDE 的 MOi 逻辑：
+/// 作用域 → 权限文件所在目录。
+fn scope_dir(scope: &PermissionScope) -> Option<PathBuf> {
+    match scope {
+        PermissionScope::Global => permissions_dir(),
+        PermissionScope::Project { project_path } => {
+            // 优先用 IDE 已建好的目录（id 由 .trust-migration.json 反查），
+            // 没有记录时退回算法现算出的 id（写入时会自动创建该目录）。
+            let id = resolve_workspace_id(project_path);
+            workspace_roots_dir().map(|dir| dir.join(id))
+        }
+    }
+}
+
+/// 在给定目录内解析权限文件路径，复刻 IDE 的 MOi 逻辑：
 /// 优先用有内容的 permissions.yaml；否则用有内容的 permissions.json；
 /// 两者皆空/不存在时返回 permissions.yaml（用于新建）。
-fn permissions_file_path() -> Option<PathBuf> {
-    let dir = permissions_dir()?;
+fn permissions_file_path_in(dir: &Path) -> PathBuf {
     let yaml = dir.join("permissions.yaml");
     let json = dir.join("permissions.json");
 
     if file_has_content(&yaml) {
-        return Some(yaml);
+        return yaml;
     }
     if file_has_content(&json) {
-        return Some(json);
+        return json;
     }
-    Some(yaml)
+    yaml
 }
+
+// 各作用域的路径统一由 `scope_dir()` + `permissions_file_path_in()` 组合得到。
 
 fn file_has_content(path: &Path) -> bool {
     std::fs::read_to_string(path)
@@ -96,18 +244,24 @@ fn file_has_content(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// 读取全局权限策略。文件不存在 / 解析失败均安全回退为空策略。
+/// 读取指定作用域的权限策略。文件不存在 / 解析失败均安全回退为空策略。
 ///
-/// 若全局 `permissions.yaml` 尚不存在，会尝试一次性迁移 0.x 的 `kiroAgent.*` 旧键
-/// （见 `migrate_legacy_kiro_agent_permissions`）。已经存在权限文件时绝不触发迁移，
-/// 以磁盘上的策略为准，避免覆盖用户已编辑的配置。
-pub fn read_permissions() -> PermissionPolicy {
-    let Some(path) = permissions_file_path() else {
+/// 全局作用域下若 `permissions.yaml` 尚不存在，会尝试一次性迁移 0.x 的
+/// `kiroAgent.*` 旧键（见 `migrate_legacy_kiro_agent_permissions`）；
+/// 项目作用域没有历史包袱，文件不存在即为空策略。
+pub fn read_permissions_scoped(scope: &PermissionScope) -> PermissionPolicy {
+    let Some(dir) = scope_dir(scope) else {
         return PermissionPolicy::default();
     };
+    let path = permissions_file_path_in(&dir);
+
     if !path.exists() {
-        return migrate_legacy_kiro_agent_permissions();
+        return match scope {
+            PermissionScope::Global => migrate_legacy_kiro_agent_permissions(),
+            PermissionScope::Project { .. } => PermissionPolicy::default(),
+        };
     }
+
     let content = match std::fs::read_to_string(&path) {
         Ok(c) => c,
         Err(_) => return PermissionPolicy::default(),
@@ -122,6 +276,10 @@ pub fn read_permissions() -> PermissionPolicy {
         serde_yaml::from_str(&content).unwrap_or_default()
     }
 }
+
+// 说明：这里不再保留 `read_permissions()` 全局包装——命令层已统一走
+// `read_permissions_scoped(&PermissionScope::Global)`，留着只会触发 dead_code 警告。
+// （`write_permissions()` 不同：它被 `migrate_legacy_kiro_agent_permissions` 调用，仍需保留。）
 
 /// 一次性迁移 0.x 的 `kiroAgent.*` 旧键到 1.0 的 `permissions.yaml` 规则。
 ///
@@ -263,10 +421,20 @@ fn legacy_kiro_user_settings_path() -> Option<PathBuf> {
     }
 }
 
-/// 写入全局权限策略（始终写 permissions.yaml，与 IDE 的 canonical 形式一致）。
-pub fn write_permissions(policy: &PermissionPolicy) -> Result<(), String> {
-    let dir = permissions_dir().ok_or("无法定位 ~/.kiro/settings 目录（HOME 未设置？）")?;
-    std::fs::create_dir_all(&dir).map_err(|e| format!("创建 ~/.kiro/settings 目录失败: {e}"))?;
+/// 写入指定作用域的权限策略（始终写 permissions.yaml，与 IDE 的 canonical 形式一致）。
+///
+/// 项目作用域的目录不存在时会自动创建——IDE 也是按需创建 `workspace-roots/<id>/` 的。
+pub fn write_permissions_scoped(
+    scope: &PermissionScope,
+    policy: &PermissionPolicy,
+) -> Result<(), String> {
+    let dir = scope_dir(scope).ok_or_else(|| match scope {
+        PermissionScope::Global => "无法定位 ~/.kiro/settings 目录（HOME 未设置？）".to_string(),
+        PermissionScope::Project { .. } => {
+            "无法定位 ~/.kiro/workspace-roots 目录（HOME 未设置？）".to_string()
+        }
+    })?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建权限目录失败: {e}"))?;
 
     let path = dir.join("permissions.yaml");
     // 没有规则时序列化为 `rules: []`，保证文件可被 IDE 正确解析。
@@ -276,9 +444,19 @@ pub fn write_permissions(policy: &PermissionPolicy) -> Result<(), String> {
     Ok(())
 }
 
-/// 返回 IDE 1.0 已知的能力名列表，供前端构建下拉候选。
+/// 写入全局权限策略（保留历史签名，等价于 `write_permissions_scoped(Global, …)`）。
+pub fn write_permissions(policy: &PermissionPolicy) -> Result<(), String> {
+    write_permissions_scoped(&PermissionScope::Global, policy)
+}
+
+/// 返回已知的能力名列表，供前端构建下拉候选。
+/// 顺序为「实测确认」在前、「旧版遗留」在后，前端直接按序展示即可。
 pub fn known_capabilities() -> Vec<String> {
-    KNOWN_CAPABILITIES.iter().map(|s| s.to_string()).collect()
+    VERIFIED_CAPABILITIES
+        .iter()
+        .chain(LEGACY_CAPABILITIES.iter())
+        .map(|s| s.to_string())
+        .collect()
 }
 
 #[cfg(test)]
@@ -371,5 +549,69 @@ mod tests {
         assert!(caps.contains(&"web_fetch".to_string()));
         assert!(caps.contains(&"mcp".to_string()));
         assert!(caps.contains(&"@subagent".to_string()));
+    }
+
+    // ---- 项目级作用域（workspace-roots）----
+
+    /// 固定向量：路径 → workspace-id。算法一旦被改坏，这条会先红。
+    ///
+    /// 这里刻意用**通用路径**而不是本机真实路径——本仓库是公开的，
+    /// 不把本地目录结构提交上去。真实机器的校验记录放在 `docs/Kiro 1.1.14/`
+    /// （`docs/` 已被 .gitignore 忽略）。
+    #[test]
+    fn workspace_id_matches_known_vector() {
+        assert_eq!(workspace_id_for("D:/projects/demo-app"), "f777371bf8d890b2");
+    }
+
+    #[test]
+    fn workspace_id_is_16_hex_chars() {
+        let id = workspace_id_for("D:/any/where");
+        assert_eq!(id.len(), 16);
+        assert!(id.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    /// 大小写与分隔符必须归一：三种写法要算出同一个 id。
+    #[test]
+    fn workspace_id_normalizes_case_and_separator() {
+        let backslash = workspace_id_for(r"E:\Foo\Bar");
+        let forward = workspace_id_for("e:/foo/bar");
+        let upper = workspace_id_for("E:/FOO/BAR");
+        assert_eq!(backslash, forward, "反斜杠与正斜杠必须等价");
+        assert_eq!(forward, upper, "大小写必须归一");
+    }
+
+    /// 反过来：大小写不同但已归一的路径相同 → id 相同；
+    /// 只有分隔符差异而不做归一则会算错（由上面那条的 replace 保证）。
+    #[test]
+    fn workspace_id_keeps_drive_letter() {
+        // 去掉盘符会算出完全不同的值，确认我们没有做这个多余动作
+        assert_ne!(workspace_id_for("D:/x"), workspace_id_for("/x"));
+    }
+
+    #[test]
+    fn project_scope_requires_non_empty_path() {
+        // 声明 project 却没给路径 → 退化为全局，避免写到错误的目录
+        assert_eq!(
+            PermissionScope::from_id(Some("project"), None),
+            PermissionScope::Global
+        );
+        assert_eq!(
+            PermissionScope::from_id(Some("project"), Some("   ".to_string())),
+            PermissionScope::Global
+        );
+        // 未指定 / 未知 scope → 全局（与历史行为一致）
+        assert_eq!(PermissionScope::from_id(None, None), PermissionScope::Global);
+        assert_eq!(
+            PermissionScope::from_id(Some("bogus"), None),
+            PermissionScope::Global
+        );
+    }
+
+    #[test]
+    fn project_scope_carries_project_path() {
+        match PermissionScope::from_id(Some("project"), Some("D:/code/x".to_string())) {
+            PermissionScope::Project { project_path } => assert_eq!(project_path, "D:/code/x"),
+            other => panic!("期望 Project 作用域，实际得到: {other:?}"),
+        }
     }
 }

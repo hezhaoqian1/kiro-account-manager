@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ShieldCheck, Pencil, Trash2, Plus } from 'lucide-react'
 import { Textarea } from '../../ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select'
@@ -6,7 +6,13 @@ import { Label } from '../../ui/label'
 import { Button } from '../../ui/button'
 import { DialogRoot, DialogContent, DialogHeader, DialogTitle, DialogBody, DialogFooter } from '../../shared/dialog'
 import SectionCard from './SectionCard'
-import { getPermissions, savePermissions, getPermissionCapabilities } from '../../../api/settingsApi'
+import {
+  getPermissions,
+  savePermissions,
+  getPermissionCapabilities,
+  listPermissionWorkspaceRoots,
+} from '../../../api/settingsApi'
+import type { WorkspaceRootInfo } from '../../../api/settingsApi'
 
 interface PermissionRule {
   capability: string
@@ -62,28 +68,76 @@ export default function PermissionsPanel({ t }: { t: (key: string) => string }) 
   // 弹窗草稿：index 为 null 表示新建；草稿独立于 rules，取消即丢弃
   const [draft, setDraft] = useState<{ index: number | null; rule: PermissionRule } | null>(null)
 
+  // 作用域：global = ~/.kiro/settings/，project = ~/.kiro/workspace-roots/<workspace-id>/
+  const [scope, setScope] = useState<'global' | 'project'>('global')
+  const [roots, setRoots] = useState<WorkspaceRootInfo[]>([])
+  const [projectPath, setProjectPath] = useState('')
+
+  const scopeArg = useMemo(
+    () =>
+      scope === 'project' ? { scope: 'project' as const, projectPath } : { scope: 'global' as const },
+    [scope, projectPath],
+  )
+
+  // 能力下拉与 workspace-root 候选只在挂载时拉一次
   useEffect(() => {
     let mounted = true
     Promise.all([
-      getPermissions<PermissionPolicy>().catch(() => ({ rules: [] as PermissionRule[], policies: [] as string[] })),
       getPermissionCapabilities<string[]>().catch(() => [] as string[]),
-    ])
-      .then(([policy, caps]) => {
-        if (!mounted) return
-        const loadedRules = policy.rules || []
-        const loadedPolicies = (policy.policies || []).join('\n')
-        setRules(loadedRules)
-        setPolicies(loadedPolicies)
-        setBaseline(JSON.stringify(normalize(loadedRules, loadedPolicies)))
-        setCapabilities(caps && caps.length ? caps : ['shell', 'read', 'write', 'web', 'subagent', 'spec', 'context', 'mcp'])
-      })
-      .finally(() => {
-        if (mounted) setLoading(false)
-      })
+      listPermissionWorkspaceRoots().catch(() => [] as WorkspaceRootInfo[]),
+    ]).then(([caps, list]) => {
+      if (!mounted) return
+      setCapabilities(
+        caps && caps.length
+          ? caps
+          : [
+              'shell',
+              'fs_read',
+              'fs_write',
+              'mcp',
+              'subagent',
+              'web_fetch',
+              'web_search',
+              'context',
+            ],
+      )
+      setRoots(list || [])
+      // 默认选中第一个「已知项目路径」的 root，省得用户再挑一次
+      const first = (list || []).find(r => r.projectPath)
+      if (first?.projectPath) setProjectPath(first.projectPath)
+    })
     return () => {
       mounted = false
     }
   }, [])
+
+  // 按当前作用域加载策略。
+  // 项目作用域但还没选路径时**不加载**——后端此时会退化成全局，
+  // 直接展示会让人误以为在编辑项目级规则。
+  const load = useCallback(async () => {
+    if (scope === 'project' && !projectPath) {
+      setLoading(false)
+      return
+    }
+    setLoading(true)
+    try {
+      const policy = await getPermissions<PermissionPolicy>(scopeArg).catch(() => ({
+        rules: [] as PermissionRule[],
+        policies: [] as string[],
+      }))
+      const loadedRules = policy.rules || []
+      const loadedPolicies = (policy.policies || []).join('\n')
+      setRules(loadedRules)
+      setPolicies(loadedPolicies)
+      setBaseline(JSON.stringify(normalize(loadedRules, loadedPolicies)))
+    } finally {
+      setLoading(false)
+    }
+  }, [scope, projectPath, scopeArg, t])
+
+  useEffect(() => {
+    void load()
+  }, [load])
 
   const snapshot = useMemo(() => JSON.stringify(normalize(rules, policies)), [rules, policies])
   const dirty = !loading && snapshot !== baseline
@@ -114,7 +168,7 @@ export default function PermissionsPanel({ t }: { t: (key: string) => string }) 
   const handleSave = async () => {
     setSaving(true)
     try {
-      await savePermissions(normalize(rules, policies))
+      await savePermissions(normalize(rules, policies), scopeArg)
       setBaseline(snapshot)
     } catch (err) {
       console.error('[PermissionsPanel] 保存失败:', err)
@@ -142,6 +196,63 @@ export default function PermissionsPanel({ t }: { t: (key: string) => string }) 
         <p className="text-[11px] text-muted-foreground">{t('settings.loading')}</p>
       ) : (
         <div className="space-y-3">
+          {/* 作用域切换：全局 ~/.kiro/settings  /  项目 ~/.kiro/workspace-roots/<id> */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex shrink-0 overflow-hidden rounded-md border border-border">
+              {(['global', 'project'] as const).map(s => (
+                <button
+                  key={s}
+                  onClick={() => setScope(s)}
+                  className={`px-2.5 py-1 text-[11px] cursor-pointer transition-colors ${
+                    scope === s
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-transparent text-muted-foreground hover:bg-muted/50'
+                  }`}
+                >
+                  {t(`settings.permissionScope_${s}`)}
+                </button>
+              ))}
+            </div>
+
+            {scope === 'project' &&
+              (roots.length > 0 ? (
+                <div className="min-w-0 flex-1">
+                  <Select value={projectPath} onValueChange={setProjectPath}>
+                    <SelectTrigger className="h-7 w-full text-[11px]">
+                      <SelectValue placeholder={t('settings.permissionPickProject')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {roots.map(r => (
+                        <SelectItem key={r.id} value={r.projectPath || r.id}>
+                          <span className="font-mono text-[11px]">{r.projectPath || r.id}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <input
+                  value={projectPath}
+                  onChange={e => setProjectPath(e.target.value)}
+                  placeholder={t('settings.permissionProjectPathPlaceholder')}
+                  className="h-7 min-w-0 flex-1 rounded-md border border-border bg-transparent px-2 text-[11px] text-foreground outline-none"
+                />
+              ))}
+          </div>
+
+          {scope === 'project' && roots.length === 0 && (
+            <p className="text-[11px] text-muted-foreground">
+              {t('settings.permissionNoWorkspaceRoots')}
+            </p>
+          )}
+
+          {scope === 'project' && projectPath && (
+            <p className="font-mono text-[10px] break-all text-muted-foreground">
+              {t('settings.permissionTargetPath')}: ~/.kiro/workspace-roots/
+              {roots.find(r => r.projectPath === projectPath)?.id ?? '…'}/permissions.yaml
+            </p>
+          )}
+
           {/* 定高滚动列表：卡片高度不随规则条数增长 */}
           <div className="rounded-lg border border-border overflow-hidden">
             <div className="max-h-[280px] overflow-y-auto">

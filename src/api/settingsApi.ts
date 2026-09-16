@@ -48,19 +48,50 @@ export function setKiroModel(model: string) {
   return invoke('set_kiro_model', { model })
 }
 
-// 读取 Kiro IDE 1.0 权限策略（~/.kiro/settings/permissions.yaml）
-export function getPermissions<T = any>() {
-  return invoke<T>('get_permissions')
+// 权限作用域：global = ~/.kiro/settings/permissions.yaml
+//             project = ~/.kiro/workspace-roots/<workspace-id>/permissions.yaml
+export type PermissionScope = 'global' | 'project'
+
+// IDE 已建过目录的 workspace-root 条目
+export interface WorkspaceRootInfo {
+  id: string // 16 位 workspace-id（目录名）
+  projectPath: string | null // 来自 .trust-migration.json 的 root；无记录时为 null
+  hasPermissions: boolean
 }
 
-// 覆盖写入 Kiro IDE 1.0 权限策略
-export function savePermissions(policy: { rules: any[]; policies?: string[] | null }) {
-  return invoke('save_permissions', { policy })
+export interface PermissionScopeArg {
+  scope?: PermissionScope
+  projectPath?: string
+}
+
+// 读取权限策略（可指定作用域）
+export function getPermissions<T = any>(arg: PermissionScopeArg = {}) {
+  return invoke<T>('get_permissions', {
+    scope: arg.scope ?? 'global',
+    projectPath: arg.projectPath ?? null,
+  })
+}
+
+// 覆盖写入权限策略（可指定作用域）
+export function savePermissions(
+  policy: { rules: any[]; policies?: string[] | null },
+  arg: PermissionScopeArg = {},
+) {
+  return invoke('save_permissions', {
+    policy,
+    scope: arg.scope ?? 'global',
+    projectPath: arg.projectPath ?? null,
+  })
 }
 
 // 读取 IDE 1.0 已知的能力(capability)名列表，供前端下拉候选
 export function getPermissionCapabilities<T = any>() {
   return invoke<T>('get_permission_capabilities')
+}
+
+// 列出项目级权限的候选 workspace-root
+export function listPermissionWorkspaceRoots<T = WorkspaceRootInfo[]>() {
+  return invoke<T>('list_permission_workspace_roots')
 }
 
 // 设置 Kiro IDE 通知开关

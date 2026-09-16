@@ -113,7 +113,10 @@ use commands::custom_agents_cmd::{
     save_custom_agent,
 };
 use commands::hooks_cmd::{create_hook, delete_hook, get_hook, get_hooks, save_hook};
-use commands::permissions_cmd::{get_permission_capabilities, get_permissions, save_permissions};
+use commands::permissions_cmd::{
+    get_permission_capabilities, get_permissions, list_permission_workspace_roots,
+    save_permissions,
+};
 use commands::session_manager::{
     delete_session, delete_workspace, export_session, list_sessions, list_workspaces, load_session,
     search_sessions,
@@ -532,6 +535,7 @@ fn main() {
             get_permissions,
             save_permissions,
             get_permission_capabilities,
+            list_permission_workspace_roots,
             set_kiro_proxy,
             set_kiro_model,
             set_kiro_codebase_indexing,
