@@ -137,8 +137,8 @@ use commands::powers_cmd::{
 //Steering
 use commands::steering_cmd::{
     create_default_steering_file, create_initial_project_steering, create_steering_file,
-    delete_steering_file, get_steering_file, get_steering_files, refine_steering_file,
-    save_steering_file,
+    delete_steering_file, get_agents_md, get_steering_file, get_steering_files,
+    refine_steering_file, save_agents_md, save_steering_file, scan_agents_md,
 };
 //Skills
 use commands::skills_cmd::{
@@ -612,6 +612,9 @@ fn main() {
             create_default_steering_file,
             create_initial_project_steering,
             refine_steering_file,
+            scan_agents_md,
+            get_agents_md,
+            save_agents_md,
             // Skills 管理命令
             get_skills,
             get_skill,

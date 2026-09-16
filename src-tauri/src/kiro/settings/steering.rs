@@ -432,6 +432,206 @@ impl SteeringManager {
     }
 }
 
+// ---------- 嵌套 AGENTS.md（Kiro 1.1.14）----------
+//
+// 逆向结论（详见 docs/Kiro 1.1.14/嵌套AGENTS.md加载机制.md）：
+// `AGENTS.md` 与 `.kiro/steering/*.md` 同属 Steering 子系统，Kiro 会递归找出
+// 工作区里**每一层目录**的 AGENTS.md，与 steering 文档合并成同一份清单，且排序为
+//   根 AGENTS.md  →  嵌套 AGENTS.md  →  .kiro/steering/*.md  →  全局 steering
+// 因此这里把它挂在 SteeringManager 下，而不是另起模块。
+
+/// 一个目录级的 `AGENTS.md`。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentsMdFile {
+    /// 相对项目根的路径（正斜杠），如 `AGENTS.md` 或 `src/api/AGENTS.md`
+    pub rel_path: String,
+    /// 所在目录（相对项目根）；根目录为 `""`
+    pub dir_rel: String,
+    /// 距项目根的层级；`0` = 项目根的那个
+    pub depth: usize,
+    pub content: String,
+    pub size: u64,
+    pub modified_at: Option<String>,
+    /// 目前固定为 `"project"`（IDE 只在工作区内扫描嵌套 AGENTS.md）
+    pub scope: String,
+}
+
+pub const AGENTS_MD: &str = "AGENTS.md";
+
+/// 递归时跳过的目录：版本控制、依赖、构建产物、编辑器配置。
+/// 与 IDE 的忽略规则不完全等价（IDE 走 fs_read 权限 + .gitignore + .kiroignore），
+/// 但能覆盖绝大多数场景，且不需要引入额外的依赖。
+const SKIP_DIRS: &[&str] = &[
+    ".git",
+    ".svn",
+    ".hg",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    ".next",
+    ".nuxt",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".idea",
+    ".vscode",
+];
+
+/// 递归深度上限，防止超大仓库或异常符号链接导致长时间遍历。
+const MAX_DEPTH: usize = 12;
+
+impl SteeringManager {
+    /// 递归扫描项目内的所有 `AGENTS.md`。
+    ///
+    /// 结果**按 Kiro 的顺序排序**：根目录的排最前，其后按层级、再按路径。
+    /// 目录不存在 / 无权限的子目录会被静默跳过，不整体失败。
+    pub fn scan_agents_md(project_dir: &str) -> Result<Vec<AgentsMdFile>, String> {
+        let root = PathBuf::from(project_dir);
+        if !root.exists() {
+            return Err(format!("项目目录不存在: {project_dir}"));
+        }
+        if !root.is_dir() {
+            return Err(format!("不是目录: {project_dir}"));
+        }
+
+        let mut out: Vec<AgentsMdFile> = Vec::new();
+        Self::walk_agents_md(&root, &root, 0, &mut out);
+        out.sort_by(|a, b| a.depth.cmp(&b.depth).then_with(|| a.rel_path.cmp(&b.rel_path)));
+        Ok(out)
+    }
+
+    fn walk_agents_md(root: &Path, dir: &Path, depth: usize, out: &mut Vec<AgentsMdFile>) {
+        if depth > MAX_DEPTH {
+            return;
+        }
+        let entries = match fs::read_dir(dir) {
+            Ok(e) => e,
+            // 无权限 / 已删除等一律跳过，不让单点故障中断整个扫描
+            Err(_) => return,
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+
+            if path.is_dir() {
+                if SKIP_DIRS.iter().any(|d| name.eq_ignore_ascii_case(d)) {
+                    continue;
+                }
+                Self::walk_agents_md(root, &path, depth + 1, out);
+                continue;
+            }
+
+            if !name.eq_ignore_ascii_case(AGENTS_MD) {
+                continue;
+            }
+
+            let rel = path.strip_prefix(root).unwrap_or(Path::new(""));
+            let rel_path = rel.to_string_lossy().replace('\\', "/");
+            let dir_rel = rel
+                .parent()
+                .map(|p| p.to_string_lossy().replace('\\', "/"))
+                .unwrap_or_default();
+
+            let metadata = fs::metadata(&path).ok();
+            let size = metadata.as_ref().map_or(0, std::fs::Metadata::len);
+            let modified_at = metadata.and_then(|m| m.modified().ok()).map(|t| {
+                let datetime: chrono::DateTime<chrono::Local> = t.into();
+                datetime.format("%Y/%m/%d %H:%M:%S").to_string()
+            });
+            let content = fs::read_to_string(&path).unwrap_or_default();
+
+            out.push(AgentsMdFile {
+                rel_path,
+                dir_rel,
+                depth,
+                content,
+                size,
+                modified_at,
+                scope: "project".to_string(),
+            });
+        }
+    }
+
+    /// 解析出一个安全的 `AGENTS.md` 绝对路径。
+    ///
+    /// 三重校验，防止路径穿越：
+    /// 1. 拒绝绝对路径与 `..` 组件
+    /// 2. canonicalize 后必须仍在项目根之下
+    /// 3. 文件名必须是 `AGENTS.md`（不区分大小写）
+    fn resolve_agents_md_path(project_dir: &str, rel_path: &str) -> Result<PathBuf, String> {
+        let rel = Path::new(rel_path);
+        if rel.is_absolute()
+            || rel
+                .components()
+                .any(|c| matches!(c, Component::ParentDir | Component::RootDir))
+        {
+            return Err("非法的相对路径".to_string());
+        }
+
+        let root = PathBuf::from(project_dir)
+            .canonicalize()
+            .map_err(|e| format!("项目目录解析失败: {e}"))?;
+        if !root.is_dir() {
+            return Err("项目路径不是目录".to_string());
+        }
+
+        let full = root
+            .join(rel)
+            .canonicalize()
+            .map_err(|e| format!("文件解析失败: {e}"))?;
+        if !full.starts_with(&root) {
+            return Err("路径越界".to_string());
+        }
+
+        match full.file_name().and_then(|n| n.to_str()) {
+            Some(n) if n.eq_ignore_ascii_case(AGENTS_MD) => Ok(full),
+            _ => Err(format!("只允许操作 {AGENTS_MD}")),
+        }
+    }
+
+    /// 读取指定 `AGENTS.md` 的内容。
+    pub fn read_agents_md(project_dir: &str, rel_path: &str) -> Result<String, String> {
+        let path = Self::resolve_agents_md_path(project_dir, rel_path)?;
+        fs::read_to_string(&path).map_err(|e| format!("读取 {AGENTS_MD} 失败: {e}"))
+    }
+
+    /// 写入指定 `AGENTS.md`（不存在则创建，父目录自动创建）。
+    ///
+    /// 与读取不同：这里**不能** canonicalize 目标文件（它可能还不存在），
+    /// 因此改为「拒绝绝对路径与 `..` 组件 + 拼接已规范化的项目根」——
+    /// 这两条约束已足以保证路径不越界。
+    pub fn write_agents_md(project_dir: &str, rel_path: &str, content: &str) -> Result<(), String> {
+        let rel = Path::new(rel_path);
+        if rel.is_absolute()
+            || rel
+                .components()
+                .any(|c| matches!(c, Component::ParentDir | Component::RootDir))
+        {
+            return Err("非法的相对路径".to_string());
+        }
+        let root = PathBuf::from(project_dir)
+            .canonicalize()
+            .map_err(|e| format!("项目目录解析失败: {e}"))?;
+        let path = root.join(rel);
+
+        match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) if n.eq_ignore_ascii_case(AGENTS_MD) => {}
+            _ => return Err(format!("只允许操作 {AGENTS_MD}")),
+        }
+
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
+        }
+        fs::write(&path, content).map_err(|e| format!("写入 {AGENTS_MD} 失败: {e}"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::SteeringManager;

@@ -110,6 +110,32 @@ export function createInitialProjectSteering<T = any>(projectDir: string) {
   return invoke<T>('create_initial_project_steering', { projectDir })
 }
 
+// ---------- 嵌套 AGENTS.md（Kiro 1.1.14）----------
+// 与 .kiro/steering/*.md 同属 Steering 子系统，但按**目录层级**分布，
+// 所以需要独立的递归扫描，不能复用普通 steering 的扁平列表接口。
+
+export interface AgentsMdFile {
+  relPath: string // 相对项目根，如 "AGENTS.md" / "src/api/AGENTS.md"
+  dirRel: string // 所在目录，根目录为 ""
+  depth: number // 0 = 项目根
+  content: string
+  size: number
+  modifiedAt?: string | null
+  scope: string
+}
+
+export function scanAgentsMd<T = AgentsMdFile[]>(projectDir: string) {
+  return invoke<T>('scan_agents_md', { projectDir })
+}
+
+export function getAgentsMd(projectDir: string, relPath: string) {
+  return invoke<string>('get_agents_md', { projectDir, relPath })
+}
+
+export function saveAgentsMd(projectDir: string, relPath: string, content: string) {
+  return invoke('save_agents_md', { projectDir, relPath, content })
+}
+
 export function refineSteeringFile<T = any>(fileName: string, scope: string, projectDir: string | null = null) {
   return invoke<T>('refine_steering_file', { fileName, scope, projectDir })
 }

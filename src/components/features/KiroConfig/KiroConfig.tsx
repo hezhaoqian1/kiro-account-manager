@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { getCustomAgents, getHooks, getPowers, getSkills, getSteeringFiles } from '../../../api/kiroConfigApi'
+import { getCustomAgents, getHooks, getPowers, getSkills, getSteeringFiles, scanAgentsMd } from '../../../api/kiroConfigApi'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useApp } from '../../../hooks/useApp'
 import { Server, Settings2, FileText, Puzzle, Bot, Zap, FolderOpen, Link2, X } from 'lucide-react'
@@ -10,6 +10,7 @@ import SkillsPanel from './SkillsPanel'
 import HooksPanel from './HooksPanel'
 import AgentsPanel from './AgentsPanel'
 import PowersPanel from './PowersPanel'
+import AgentsMdPanel from './AgentsMdPanel'
 import { handleUiError } from '../../../utils/errorLogger'
 import { getThemeAccent } from './themeAccent'
 
@@ -24,6 +25,7 @@ function KiroConfig() {
   const [hooksCount, setHooksCount] = useState(0)
   const [agentsCount, setAgentsCount] = useState(0)
   const [powersCount, setPowersCount] = useState(0)
+  const [agentsMdCount, setAgentsMdCount] = useState(0)
   const [projectDir, setProjectDir] = useState<string | null>(null)
 
   // 初始加载数量
@@ -37,6 +39,14 @@ function KiroConfig() {
     getHooks(projectDir || null).then(hooks => setHooksCount(hooks?.length || 0)).catch(() => setHooksCount(0))
 
     getPowers().then(powers => setPowersCount(powers?.length || 0)).catch(() => {})
+
+    // 嵌套 AGENTS.md 仅在工作区内扫描；无项目目录时不调用（后端要求 project_dir 非空），
+    // 与 AgentsMdPanel 的守卫一致，避免把一次无效 RPC 算进计数。
+    if (projectDir) {
+      scanAgentsMd(projectDir).then(files => setAgentsMdCount(files?.length || 0)).catch(() => setAgentsMdCount(0))
+    } else {
+      setAgentsMdCount(0)
+    }
   }, [projectDir])
 
 
@@ -58,6 +68,7 @@ function KiroConfig() {
     { id: 'skills', label: t('kiroConfig.skills'), icon: Puzzle, count: skillsCount },
     { id: 'hooks', label: t('kiroConfig.hooks'), icon: Link2, count: hooksCount },
     { id: 'steering', label: t('kiroConfig.steering'), icon: FileText, count: steeringCount },
+    { id: 'agentsMd', label: t('kiroConfig.agentsMd'), icon: FileText, count: agentsMdCount },
   ]
 
   return (
@@ -133,6 +144,9 @@ function KiroConfig() {
           </TabsContent>
           <TabsContent value="steering" className="h-full m-0">
             <SteeringPanel onCountChange={setSteeringCount} projectDir={projectDir} />
+          </TabsContent>
+          <TabsContent value="agentsMd" className="h-full m-0">
+            <AgentsMdPanel onCountChange={setAgentsMdCount} projectDir={projectDir} />
           </TabsContent>
           <TabsContent value="skills" className="h-full m-0">
             <SkillsPanel onCountChange={setSkillsCount} projectDir={projectDir} />
