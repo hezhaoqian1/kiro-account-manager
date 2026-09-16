@@ -152,6 +152,22 @@ impl WorkflowManager {
         fs::write(&path, content).map_err(|e| format!("写入 {file_name} 失败: {e}"))
     }
 
+    /// 新建一个空 workflow 文件（已存在则报错，避免覆盖已有内容）。
+    pub fn create_workflow(
+        scope: &str,
+        project_dir: Option<&str>,
+        file_name: &str,
+    ) -> Result<(), String> {
+        let file_name = Self::sanitize_file_name(file_name)?;
+        let root = Self::resolve_root(scope, project_dir)?;
+        fs::create_dir_all(&root).map_err(|e| format!("创建 workflows 目录失败: {e}"))?;
+        let path = root.join(&file_name);
+        if path.exists() {
+            return Err(format!("工作流文件已存在: {file_name}"));
+        }
+        fs::write(&path, "").map_err(|e| format!("创建 {file_name} 失败: {e}"))
+    }
+
     /// 删除单个 workflow 文件。
     pub fn delete_workflow(
         scope: &str,

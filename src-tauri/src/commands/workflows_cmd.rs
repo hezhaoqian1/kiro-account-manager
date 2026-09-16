@@ -2,6 +2,7 @@
 
 use crate::commands::common::run_blocking_task;
 use crate::kiro::settings::workflows::{WorkflowFile, WorkflowManager};
+use tauri::command;
 
 /// 列出某一级别下的所有 workflow 文件。
 #[command]

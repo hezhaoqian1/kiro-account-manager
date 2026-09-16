@@ -23,5 +23,7 @@ pub mod proxy_cmd;
 pub mod session_manager;
 pub mod cli_session_cmd;
 pub mod skills_cmd;
+pub mod specs_cmd;
 pub mod steering_cmd;
 pub mod update_cmd;
+pub mod workflows_cmd;

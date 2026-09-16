@@ -2,6 +2,7 @@
 
 use crate::commands::common::run_blocking_task;
 use crate::kiro::settings::specs::{SpecInfo, SpecManager, SpecSummary};
+use tauri::command;
 
 /// 列出某一级别下的所有 spec。
 #[command]
