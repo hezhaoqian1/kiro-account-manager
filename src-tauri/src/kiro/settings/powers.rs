@@ -936,7 +936,7 @@ const RECOMMENDED_REGISTRY_URL: &str =
     "https://prod.download.desktop.kiro.dev/powers/default_registry.json";
 
 /// Kiro 内置注册表 ID 常量（与 IDE 实现一致）
-const REGISTRY_ID_RECOMMENDED: &str = "kiro-recommended";
+pub(crate) const REGISTRY_ID_RECOMMENDED: &str = "kiro-recommended";
 const REGISTRY_ID_USER_ADDED: &str = "user-added";
 
 /// Power 来源：本地文件夹 或 git 仓库。

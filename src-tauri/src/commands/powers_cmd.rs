@@ -3,6 +3,7 @@
 use crate::commands::common::run_blocking_task;
 use crate::kiro::settings::powers::{
     PowerInfo, PowersManager, RecommendedPower, RegistryInfo, UserAddedPowerEntry,
+    REGISTRY_ID_RECOMMENDED,
 };
 use tauri::command;
 
@@ -20,7 +21,7 @@ pub async fn install_power(
             &clone_url,
             &path_in_repo,
             &branch,
-            "kiro-recommended",
+            REGISTRY_ID_RECOMMENDED,
         )
     })
     .await
