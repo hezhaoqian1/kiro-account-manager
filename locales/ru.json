@@ -571,6 +571,8 @@
 
   "kiroConfig.title": "Кастомизация Kiro",
   "kiroConfig.subtitle": "Управление службами MCP Kiro IDE, правилами Steering, Skills, Hooks, Custom Agents и Powers",
+  "kiroConfig.cloudReadOnly": "Облачная конфигурация доступна только для чтения",
+  "kiroConfig.cloudReadOnlyDesc": "Kiro Cloud управляет этой конфигурацией (kiroAgent.experiments.cloudConfig включён). Эти элементы — реплики только для чтения; запись здесь отключена. Редактируйте в Kiro Web.",
   "kiroConfig.mcp": "Службы MCP",
   "kiroConfig.steering": "Steering",
   "kiroConfig.skills": "Skills",

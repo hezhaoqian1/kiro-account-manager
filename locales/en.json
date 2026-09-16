@@ -568,6 +568,8 @@
 
   "kiroConfig.title": "Kiro Customization",
   "kiroConfig.subtitle": "Manage Kiro IDE's MCP services, Steering rules, Skills, Hooks, Custom Agents, and Powers",
+  "kiroConfig.cloudReadOnly": "Cloud config is read-only",
+  "kiroConfig.cloudReadOnlyDesc": "Kiro Cloud is managing this configuration (kiroAgent.experiments.cloudConfig is enabled). These items are read-only replicas; writing is disabled here. Edit in Kiro Web instead.",
   "kiroConfig.mcp": "MCP Services",
   "kiroConfig.steering": "Steering",
   "kiroConfig.skills": "Skills",

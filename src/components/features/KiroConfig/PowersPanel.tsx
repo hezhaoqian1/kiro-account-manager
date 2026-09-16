@@ -11,7 +11,7 @@ import React from 'react'
 // 格式化文件大小
 const formatSize = (bytes: number) => bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`
 
-function PowersPanel({ onCountChange }: any) {
+function PowersPanel({ onCountChange, readOnly }: any) {
   const { t, theme } = useApp()
   const accent = useMemo(() => getThemeAccent(theme), [theme])
   const { showConfirm, showSuccess } = useDialog()
@@ -72,6 +72,7 @@ function PowersPanel({ onCountChange }: any) {
   useEffect(() => { loadRecommended() }, [loadRecommended])
 
   const handleUninstall = async (power: any) => {
+    if (readOnly) return
     if (!await showConfirm(t('powers.confirmUninstall'), t('powers.confirmUninstallPower', { name: power.name }))) return
     try {
       await uninstallPower(power.name)
@@ -396,7 +397,7 @@ function PowersPanel({ onCountChange }: any) {
                 ) : (
                   <button
                     onClick={() => handleInstall(selectedRec)}
-                    disabled={installing === selectedRec.name}
+                    disabled={installing === selectedRec.name || readOnly}
                     className={`cursor-pointer flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed ${accentGradientButtonClass}`}
                   >
                     {installing === selectedRec.name ? (

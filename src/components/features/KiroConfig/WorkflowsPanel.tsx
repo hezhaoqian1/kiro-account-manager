@@ -30,9 +30,11 @@ const TEMPLATE = `{
 export default function WorkflowsPanel({
   onCountChange,
   projectDir,
+  readOnly,
 }: {
   onCountChange?: (n: number) => void
   projectDir: string | null
+  readOnly?: boolean
 }) {
   const { t } = useApp()
   const [files, setFiles] = useState<WorkflowFile[]>([])
@@ -107,7 +109,12 @@ export default function WorkflowsPanel({
     const file_name = name.endsWith('.workflow.json') || name.endsWith('.workflow.yaml') || name.endsWith('.workflow.yml')
       ? name
       : `${name}.workflow.json`
-    await createWorkflow(scope, projectDir, file_name).catch(() => {})
+    try {
+      await createWorkflow(scope, projectDir, file_name)
+    } catch {
+      // 创建失败（多半是同名文件已存在）：中止后续写入，避免覆盖已有内容
+      return
+    }
     await saveWorkflow(scope, projectDir, file_name, TEMPLATE).catch(() => {})
     setNewName('')
     setCreating(false)
@@ -215,6 +222,7 @@ export default function WorkflowsPanel({
               <Textarea
                 value={draft}
                 onChange={e => setDraft(e.target.value)}
+                readOnly={readOnly}
                 className="h-full resize-none font-mono text-xs"
                 placeholder={t('kiroConfig.workflowFilePlaceholder')}
               />

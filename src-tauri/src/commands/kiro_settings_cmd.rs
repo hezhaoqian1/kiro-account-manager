@@ -596,6 +596,32 @@ pub async fn get_kiro_settings() -> Result<KiroSettings, String> {
     run_kiro_blocking(get_kiro_settings_inner).await
 }
 
+/// 纯读取云配置开关，**不触发双向同步写回**。
+///
+/// KiroConfig 面板需要在进入时判断「云配置是否开启」以挂只读横幅并禁用写操作，
+/// 若复用 `get_kiro_settings` 会顺带把缺失键写回 settings.json（污染用户配置），
+/// 故单独提供一个只读查询。判定依据：`kiroAgent.experiments.cloudConfig` 为 true。
+fn read_cloud_config_enabled_inner() -> Result<bool, String> {
+    let path = get_kiro_settings_path().ok_or("无法获取 Kiro 设置路径")?;
+    if !path.exists() {
+        return Ok(false);
+    }
+    let content = std::fs::read_to_string(&path).map_err(|e| format!("读取设置文件失败: {e}"))?;
+    let json: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("解析设置文件失败: {e}"))?;
+    Ok(json
+        .get("kiroAgent")
+        .and_then(|k| k.get("experiments"))
+        .and_then(|e| e.get("cloudConfig"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false))
+}
+
+#[tauri::command]
+pub async fn read_cloud_config_enabled() -> Result<bool, String> {
+    run_kiro_blocking(read_cloud_config_enabled_inner).await
+}
+
 #[tauri::command]
 pub async fn set_kiro_proxy(proxy: String) -> Result<(), String> {
     run_kiro_blocking(move || set_kiro_proxy_inner(proxy)).await

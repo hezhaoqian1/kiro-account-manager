@@ -33,6 +33,12 @@ export function getKiroSettings<T = any>() {
   return invoke<T>('get_kiro_settings')
 }
 
+// 纯读取云配置开关（kiroAgent.experiments.cloudConfig），不写回 settings.json。
+// 用于 KiroConfig 进入时判断是否需要挂只读横幅并禁用写操作。
+export function readCloudConfigEnabled() {
+  return invoke<boolean>('read_cloud_config_enabled')
+}
+
 // 用系统默认程序打开 Kiro IDE 的 settings.json（文件不存在时会先创建）
 export function openKiroSettingsFile() {
   return invoke('open_kiro_settings_file')

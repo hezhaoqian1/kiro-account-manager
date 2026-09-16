@@ -562,6 +562,8 @@
   "about.by": "by",
   "kiroConfig.title": "Kiro 定制",
   "kiroConfig.subtitle": "管理 Kiro IDE 的 MCP 服务、Steering 规则、Skills、Hooks、Custom Agents 和 Powers",
+  "kiroConfig.cloudReadOnly": "云端配置只读",
+  "kiroConfig.cloudReadOnlyDesc": "Kiro Cloud 正在管理此配置（kiroAgent.experiments.cloudConfig 已开启）。这些项以只读副本形式同步，本工具已禁用写入，请在 Kiro Web 中编辑。",
   "kiroConfig.mcp": "MCP 服务",
   "kiroConfig.steering": "Steering",
   "kiroConfig.skills": "Skills",

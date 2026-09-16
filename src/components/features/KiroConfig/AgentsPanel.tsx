@@ -180,7 +180,7 @@ const normalizeToolTagsSelection = (nextValues: string[], prevValues: string[] =
   return prevHasWildcard ? uniqueValues.filter(value => value !== '*') : ['*']
 }
 
-function AgentsPanel({ onCountChange, projectDir }: any) {
+function AgentsPanel({ onCountChange, projectDir, readOnly }: any) {
   const { t, theme } = useApp()
   const accent = useMemo(() => getThemeAccent(theme), [theme])
   const { showConfirm } = useDialog()
@@ -563,7 +563,7 @@ function AgentsPanel({ onCountChange, projectDir }: any) {
 }
 
 // 创建 Agent 弹窗
-function CreateAgentModal({ onCreate, onClose, accent, surface, accentGradientButtonClass, colors, t, hasProjectDir }: any) {
+function CreateAgentModal({ onCreate, onClose, accent, surface, accentGradientButtonClass, colors, t, hasProjectDir, readOnly }: any) {
   const [agentName, setAgentName] = useState('')
   const [description, setDescription] = useState('')
   const [tools, setTools] = useState<string[]>([])
@@ -667,7 +667,7 @@ function CreateAgentModal({ onCreate, onClose, accent, surface, accentGradientBu
 
           <button
             onClick={() => onCreate(agentName.trim(), description.trim(), tools, model, scope)}
-            disabled={!agentName.trim()}
+            disabled={!agentName.trim() || readOnly}
             className={`cursor-pointer w-full px-4 py-3 rounded-xl text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] ${accentGradientButtonClass}`}
           >
             {t('common.add')}

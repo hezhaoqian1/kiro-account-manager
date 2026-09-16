@@ -64,7 +64,7 @@ const ScopeBadge = ({ scope, accent }: any) => {
   )
 }
 
-function SteeringPanel({ onCountChange, projectDir }: any) {
+function SteeringPanel({ onCountChange, projectDir, readOnly }: any) {
   const { t, theme } = useApp()
   const accent = useMemo(() => getThemeAccent(theme), [theme])
   const { showConfirm, showSuccess } = useDialog()
@@ -127,7 +127,7 @@ function SteeringPanel({ onCountChange, projectDir }: any) {
   }
 
   const handleSave = async () => {
-    if (!selectedFile) return
+    if (readOnly || !selectedFile) return
     setSaving(true)
     try {
       const fullContent = buildContent(editState.inclusion, editState.filePattern, editState.content, editState.name, editState.description)
@@ -148,6 +148,7 @@ function SteeringPanel({ onCountChange, projectDir }: any) {
   }
 
   const handleDelete = async (file: any) => {
+    if (readOnly) return
     if (!await showConfirm(t('steering.confirmDelete'), t('steering.confirmDeleteFile', { fileName: file.fileName }))) return
     try {
       await deleteSteeringFile(file.fileName, file.scope, projectDir || null)
@@ -165,6 +166,7 @@ function SteeringPanel({ onCountChange, projectDir }: any) {
   }
 
   const handleCreate = async (fileName: string, inclusion: string, filePattern: string, scope: string, name: string, description: string) => {
+    if (readOnly) return
     const fName = fileName.endsWith('.md') ? fileName : `${fileName}.md`
     const content = buildContent(inclusion, filePattern, '\n<!-- 在此添加你的 steering 规则 -->\n', name, description)
     try {
@@ -202,6 +204,7 @@ function SteeringPanel({ onCountChange, projectDir }: any) {
   }
 
   const handleCreateDefault = async () => {
+    if (readOnly) return
     setCreatingDefault(true)
     try {
       const scope = await resolveScope()
@@ -216,7 +219,7 @@ function SteeringPanel({ onCountChange, projectDir }: any) {
   }
 
   const handleCreateInitial = async () => {
-    if (!projectDir) return
+    if (readOnly || !projectDir) return
     setInitializingProject(true)
     try {
       const created = await createInitialProjectSteering(projectDir)
@@ -244,7 +247,7 @@ function SteeringPanel({ onCountChange, projectDir }: any) {
   }
 
   const handleRefine = async () => {
-    if (!selectedFile) return
+    if (readOnly || !selectedFile) return
     setRefining(true)
     try {
       const refined = await refineSteeringFile(selectedFile.fileName, selectedFile.scope, projectDir || null)
@@ -290,6 +293,7 @@ function SteeringPanel({ onCountChange, projectDir }: any) {
         accent={accent}
         colors={colors}
         t={t}
+        readOnly={readOnly}
       />
 
       {/* 右侧编辑器 */}
@@ -313,6 +317,7 @@ function SteeringPanel({ onCountChange, projectDir }: any) {
             accent={accent}
             colors={colors}
             t={t}
+            readOnly={readOnly}
           />
         ) : (
           <div className={`flex-1 flex items-center justify-center text-muted-foreground`}>
@@ -359,7 +364,7 @@ const InclusionBadge = ({ inclusion, accent }: any) => {
 }
 
 // 文件列表组件
-function FileList({ files, selectedFile, onSelect, onDelete, onRefresh, onCreate, onCreateDefault, onCreateInitial, creatingDefault, initializingProject, hasProjectDir, accent, colors, t }: any) {
+function FileList({ files, selectedFile, onSelect, onDelete, onRefresh, onCreate, onCreateDefault, onCreateInitial, creatingDefault, initializingProject, hasProjectDir, accent, colors, t, readOnly }: any) {
   const accentSolidButtonClass = getSolidAccentButton(accent)
   const inclusionStyles = getInclusionStyles(accent)
   // 按 inclusion 分组（保持顺序）
@@ -384,7 +389,7 @@ function FileList({ files, selectedFile, onSelect, onDelete, onRefresh, onCreate
         <div className="flex gap-2">
           <button
             onClick={onCreateDefault}
-            disabled={creatingDefault}
+            disabled={readOnly || creatingDefault}
             className={`p-2 rounded-lg hover:bg-muted/50 transition-colors disabled:opacity-50 cursor-pointer`}
             title={t('steering.defaultTemplate')}
           >
@@ -393,7 +398,7 @@ function FileList({ files, selectedFile, onSelect, onDelete, onRefresh, onCreate
           {hasProjectDir && (
             <button
               onClick={onCreateInitial}
-              disabled={initializingProject}
+              disabled={readOnly || initializingProject}
               className={`p-2 rounded-lg hover:bg-muted/50 transition-colors disabled:opacity-50 cursor-pointer`}
               title={t('steering.initializeProject')}
             >
@@ -402,6 +407,7 @@ function FileList({ files, selectedFile, onSelect, onDelete, onRefresh, onCreate
           )}
           <button
             onClick={onCreate}
+            disabled={readOnly}
             className={`p-2 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer`}
             title={t('steering.newSteering')}
           >
@@ -423,6 +429,7 @@ function FileList({ files, selectedFile, onSelect, onDelete, onRefresh, onCreate
             <p className="text-sm">{t('steering.noFiles')}</p>
             <button
               onClick={onCreate}
+              disabled={readOnly}
               className={`mt-4 px-4 py-2 rounded-lg text-sm transition-colors cursor-pointer ${accentSolidButtonClass}`}
             >
               {t('steering.newSteering')}
@@ -504,7 +511,7 @@ function FileList({ files, selectedFile, onSelect, onDelete, onRefresh, onCreate
 }
 
 // 编辑器组件
-function Editor({ file, editState, hasChanges, saving, refining, inclusionOptions, onContentChange, onInclusionChange, onFilePatternChange, onNameChange, onDescriptionChange, onSave, onRefine, surface, accent, colors, t }: any) {
+function Editor({ file, editState, hasChanges, saving, refining, inclusionOptions, onContentChange, onInclusionChange, onFilePatternChange, onNameChange, onDescriptionChange, onSave, onRefine, surface, accent, colors, t, readOnly }: any) {
   const accentSolidButtonClass = getSolidAccentButton(accent)
   return (
     <>
@@ -517,7 +524,7 @@ function Editor({ file, editState, hasChanges, saving, refining, inclusionOption
         <div className="flex items-center gap-2">
           <button
             onClick={onRefine}
-            disabled={refining}
+            disabled={readOnly || refining}
             className={`cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 focus:outline-none focus:ring-2 ${accent.ring} bg-muted/30 disabled:opacity-50`}
           >
             <Wand2 size={14} />
@@ -525,7 +532,7 @@ function Editor({ file, editState, hasChanges, saving, refining, inclusionOption
           </button>
           <button
             onClick={onSave}
-            disabled={!hasChanges || saving}
+            disabled={readOnly || !hasChanges || saving}
             className={`cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 focus:outline-none focus:ring-2 ${accent.ring} ${
               hasChanges ? accentSolidButtonClass : colors.btnDisabled
             } disabled:opacity-50`}
@@ -593,6 +600,7 @@ function Editor({ file, editState, hasChanges, saving, refining, inclusionOption
         <Textarea
           value={editState.content}
           onChange={(e) => onContentChange(e.target.value)}
+          readOnly={readOnly}
           placeholder={t('steering.contentPlaceholder')}
           className={`flex-1 w-full h-full min-h-[400px] p-4 rounded-xl text-sm leading-relaxed font-mono resize-none border border-input ${colors.inputFocus}`}
           style={{ 

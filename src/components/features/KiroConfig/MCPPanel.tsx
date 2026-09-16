@@ -35,7 +35,7 @@ function SearchInput({ value, onChange, placeholder, colors, t, accent }: any) {
   )
 }
 
-function MCPPanel({ onCountChange, projectDir }: any) {
+function MCPPanel({ onCountChange, projectDir, readOnly }: any) {
   const { t, theme } = useApp()
   const accent = useMemo(() => getThemeAccent(theme), [theme])
   const accentGradientButtonClass = getGradientAccentButton(accent)
@@ -80,6 +80,7 @@ function MCPPanel({ onCountChange, projectDir }: any) {
   useEffect(() => { loadConfig() }, [loadConfig])
 
   const handleToggle = async (name: string, disabled: boolean) => {
+    if (readOnly) return
     const oldDisabled = servers[name]?.disabled
     setServers((prev: any) => ({ ...prev, [name]: { ...prev[name], disabled } }))
     try {
@@ -198,7 +199,7 @@ function MCPPanel({ onCountChange, projectDir }: any) {
 }
 
 // MCP 服务器卡片
-function MCPServerItem({ name, config, accent, colors, onToggle, onEdit, onDelete, t }: any) {
+function MCPServerItem({ name, config, accent, colors, onToggle, onEdit, onDelete, t, readOnly }: any) {
   const isDisabled = config.disabled
   const commandStr = [config.command, ...(config.args || [])].join(' ')
   const envCount = Object.keys(config.env || {}).length
@@ -242,18 +243,21 @@ function MCPServerItem({ name, config, accent, colors, onToggle, onEdit, onDelet
       <div className="flex items-center gap-2">
         <button
           onClick={() => onToggle(!isDisabled)}
+          disabled={readOnly}
           className={`cursor-pointer relative w-11 h-6 min-h-[24px] rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 ${accent.ring} ${isDisabled ? colors.toggleOff : colors.toggleOn}`}
         >
           <div className={`absolute top-0.5 w-5 h-5 ${colors.toggleThumb} rounded-full transition-transform ${isDisabled ? 'left-0.5' : 'left-5'}`} />
         </button>
         <button
           onClick={onEdit}
+          disabled={readOnly}
           className={`cursor-pointer p-2 rounded-lg hover:bg-muted/50 transition-colors duration-200 focus:outline-none focus:ring-2 ${accent.ring}`}
         >
           <Edit2 size={16} className={"text-muted-foreground"} />
         </button>
         <button
           onClick={onDelete}
+          disabled={readOnly}
           className="cursor-pointer p-2 rounded-lg hover:bg-red-500/10 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-red-500/60"
         >
           <Trash2 size={16} className="text-red-500" />

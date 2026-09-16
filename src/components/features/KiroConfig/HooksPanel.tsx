@@ -39,7 +39,7 @@ const isValidHookFileName = (raw: string): boolean => {
   return HOOK_BASE_NAME_RE.test(stripHookSuffix(name))
 }
 
-function HooksPanel({ onCountChange, projectDir }: any) {
+function HooksPanel({ onCountChange, projectDir, readOnly }: any) {
   const { t, theme } = useApp()
   const accent = useMemo(() => getThemeAccent(theme), [theme])
   const { showConfirm, showError } = useDialog()
@@ -93,7 +93,7 @@ function HooksPanel({ onCountChange, projectDir }: any) {
   }
 
   const handleSave = async () => {
-    if (!selectedHook) return
+    if (readOnly || !selectedHook) return
     // 用户级 hook（~/.kiro/hooks）不依赖项目目录，只有项目级才要求
     if ((selectedHook.scope || 'project') !== 'user' && !projectDir) return
 
@@ -114,6 +114,7 @@ function HooksPanel({ onCountChange, projectDir }: any) {
   }
 
   const handleDelete = async (hookFile: any) => {
+    if (readOnly) return
     // 用户级 hook（~/.kiro/hooks）不依赖项目目录，只有项目级才要求
     if ((hookFile.scope || 'project') !== 'user' && !projectDir) return
     if (!await showConfirm(t('hooks.confirmDelete'), t('hooks.confirmDeleteFile', { fileName: hookFile.fileName }))) return
@@ -133,6 +134,7 @@ function HooksPanel({ onCountChange, projectDir }: any) {
   }
 
   const handleCreate = async (fileName: string, scope: string = 'project') => {
+    if (readOnly) return false
     // 用户级（~/.kiro/hooks）不依赖项目目录
     if (scope !== 'user' && !projectDir) return false
 
@@ -226,6 +228,7 @@ function HooksPanel({ onCountChange, projectDir }: any) {
             <div className="flex gap-2">
               <button
                 onClick={() => setShowCreateModal(true)}
+                disabled={readOnly}
                 className={`cursor-pointer p-2 rounded-lg hover:bg-muted/50 transition-colors duration-200 focus:outline-none focus:ring-2 ${accent.ring}`}
               >
                 <Plus size={16} className={accent.text} />
@@ -245,6 +248,7 @@ function HooksPanel({ onCountChange, projectDir }: any) {
               <p className="text-sm">{t('hooks.noHooks')}</p>
               <button
                 onClick={() => setShowCreateModal(true)}
+                disabled={readOnly}
                 className={`cursor-pointer mt-4 px-4 py-2 rounded-lg text-sm transition-colors duration-200 focus:outline-none focus:ring-2 ${accent.ring} ${accentSolidButtonClass}`}
               >
                 {t('common.add')}
@@ -275,6 +279,7 @@ function HooksPanel({ onCountChange, projectDir }: any) {
                       </div>
                       <button
                         onClick={(e) => { e.stopPropagation(); handleDelete(h) }}
+                        disabled={readOnly}
                         className="cursor-pointer opacity-0 group-hover:opacity-100 p-2 rounded-lg hover:bg-red-500/20 flex-shrink-0 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-red-500/60"
                       >
                         <Trash2 size={16} className="text-red-500" />
@@ -301,7 +306,7 @@ function HooksPanel({ onCountChange, projectDir }: any) {
               </div>
               <button
                 onClick={handleSave}
-                disabled={!hasChanges || saving}
+                disabled={readOnly || !hasChanges || saving}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all cursor-pointer ${hasChanges ? accentSolidButtonClass : colors.btnDisabled} disabled:opacity-50 disabled:cursor-not-allowed`}
               >
                 <Save size={14} />
@@ -316,6 +321,7 @@ function HooksPanel({ onCountChange, projectDir }: any) {
                   setEditContent(next)
                   setHasChanges(next !== (selectedHook.content || ''))
                 }}
+                readOnly={readOnly}
                 placeholder={t('hooks.contentPlaceholder')}
                 className={`w-full h-full min-h-[400px] p-4 rounded-xl text-sm leading-relaxed font-mono resize-none ${colors.inputFocus}`}
                 style={{
@@ -345,13 +351,14 @@ function HooksPanel({ onCountChange, projectDir }: any) {
           accentGradientButtonClass={accentGradientButtonClass}
           existingFileNames={hooks.map(h => h.fileName)}
           hasProjectDir={!!projectDir}
+          readOnly={readOnly}
         />
       )}
     </div>
   )
 }
 
-function CreateHookModal({ onCreate, onClose, colors, t, accent, accentGradientButtonClass, existingFileNames, hasProjectDir }: any) {
+function CreateHookModal({ onCreate, onClose, colors, t, accent, accentGradientButtonClass, existingFileNames, hasProjectDir, readOnly }: any) {
   const [fileName, setFileName] = useState('')
   const [creating, setCreating] = useState(false)
   // user = ~/.kiro/hooks（Kiro IDE 1.0.182+，对所有项目生效）；project = <project>/.kiro/hooks
@@ -438,7 +445,7 @@ function CreateHookModal({ onCreate, onClose, colors, t, accent, accentGradientB
 
           <button
             onClick={handleSubmit}
-            disabled={!canSubmit}
+            disabled={readOnly || !canSubmit}
             className={`w-full px-4 py-3 rounded-xl text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] cursor-pointer ${accentGradientButtonClass}`}
           >
             {creating ? t('hooks.saving') : t('common.add')}

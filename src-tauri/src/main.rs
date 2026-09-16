@@ -95,10 +95,10 @@ use commands::kiro_cli_cmd::{
 };
 //kiroshe
 use commands::kiro_settings_cmd::{
-    get_kiro_settings, open_kiro_settings_file, set_kiro_agent_autonomy, set_kiro_agent_setting,
-    set_kiro_codebase_indexing, set_kiro_configure_mcp, set_kiro_debug_logs, set_kiro_model,
-    set_kiro_notification, set_kiro_proxy, set_kiro_reference_tracker, set_kiro_tab_autocomplete,
-    set_kiro_telemetry, set_kiro_usage_summary,
+    get_kiro_settings, open_kiro_settings_file, read_cloud_config_enabled, set_kiro_agent_autonomy,
+    set_kiro_agent_setting, set_kiro_codebase_indexing, set_kiro_configure_mcp, set_kiro_debug_logs,
+    set_kiro_model, set_kiro_notification, set_kiro_proxy, set_kiro_reference_tracker,
+    set_kiro_tab_autocomplete, set_kiro_telemetry, set_kiro_usage_summary,
 };
 use commands::machine_guid::{
     clear_macos_override, generate_machine_guid, get_system_machine_guid,
@@ -538,6 +538,7 @@ fn main() {
             // Kiro IDE 设置命令
             get_kiro_settings,
             open_kiro_settings_file,
+            read_cloud_config_enabled,
             get_permissions,
             save_permissions,
             get_permission_capabilities,

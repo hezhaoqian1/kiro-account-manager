@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
 import { getCustomAgents, getHooks, getPowers, getSkills, getSteeringFiles, scanAgentsMd, listSpecs, listWorkflows } from '../../../api/kiroConfigApi'
+import { readCloudConfigEnabled } from '../../../api/settingsApi'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useApp } from '../../../hooks/useApp'
-import { Server, Settings2, FileText, Puzzle, Bot, Zap, FolderOpen, Link2, X } from 'lucide-react'
+import { Server, Settings2, FileText, Puzzle, Bot, Zap, FolderOpen, Link2, X, Lock } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import MCPPanel from './MCPPanel'
 import SteeringPanel from './SteeringPanel'
@@ -31,6 +32,9 @@ function KiroConfig() {
   const [specsCount, setSpecsCount] = useState(0)
   const [workflowsCount, setWorkflowsCount] = useState(0)
   const [projectDir, setProjectDir] = useState<string | null>(null)
+  // 云配置只读：kiroAgent.experiments.cloudConfig 开启时，steering/skills/extensions(MCP)/
+  // powers/hooks/workflows/agents 由 Kiro Cloud 托管，本地写入无效，本管理端应禁用写操作。
+  const [cloudReadOnly, setCloudReadOnly] = useState(false)
 
   // 初始加载数量
   useEffect(() => {
@@ -60,6 +64,13 @@ function KiroConfig() {
     const wfScope = projectDir ? 'project' : 'user'
     listWorkflows(wfScope, projectDir).then(w => setWorkflowsCount(w?.length || 0)).catch(() => setWorkflowsCount(0))
   }, [projectDir])
+
+  // 进入时读取云配置开关（纯读取，不写回 settings.json）。
+  useEffect(() => {
+    readCloudConfigEnabled()
+      .then(setCloudReadOnly)
+      .catch(() => setCloudReadOnly(false))
+  }, [])
 
 
   const handleSelectProjectDir = async () => {
@@ -123,6 +134,17 @@ function KiroConfig() {
         </div>
       </div>
 
+      {/* 云配置只读横幅：开启 experiments.cloudConfig 时，云端托管的配置本地写入无效 */}
+      {cloudReadOnly && (
+        <div className="mx-5 mb-1 px-3 py-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 flex items-start gap-2.5">
+          <Lock size={16} className="mt-0.5 text-amber-500 shrink-0" />
+          <div className="flex-1 text-xs leading-relaxed">
+            <div className="font-semibold text-foreground mb-0.5">{t('kiroConfig.cloudReadOnly')}</div>
+            <div className="text-muted-foreground">{t('kiroConfig.cloudReadOnlyDesc')}</div>
+          </div>
+        </div>
+      )}
+
       {/* Tabs + Content */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
         <div className="px-5 pt-3 pb-2">
@@ -154,10 +176,10 @@ function KiroConfig() {
 
         <div className="flex-1 min-h-0 overflow-hidden">
           <TabsContent value="mcp" className="h-full m-0">
-            <MCPPanel onCountChange={setMcpCount} projectDir={projectDir} />
+            <MCPPanel onCountChange={setMcpCount} projectDir={projectDir} readOnly={cloudReadOnly} />
           </TabsContent>
           <TabsContent value="steering" className="h-full m-0">
-            <SteeringPanel onCountChange={setSteeringCount} projectDir={projectDir} />
+            <SteeringPanel onCountChange={setSteeringCount} projectDir={projectDir} readOnly={cloudReadOnly} />
           </TabsContent>
           <TabsContent value="agentsMd" className="h-full m-0">
             <AgentsMdPanel onCountChange={setAgentsMdCount} projectDir={projectDir} />
@@ -166,21 +188,21 @@ function KiroConfig() {
             <SpecsPanel onCountChange={setSpecsCount} projectDir={projectDir} />
           </TabsContent>
           <TabsContent value="workflows" className="h-full m-0">
-            <WorkflowsPanel onCountChange={setWorkflowsCount} projectDir={projectDir} />
+            <WorkflowsPanel onCountChange={setWorkflowsCount} projectDir={projectDir} readOnly={cloudReadOnly} />
           </TabsContent>
           <TabsContent value="skills" className="h-full m-0">
-            <SkillsPanel onCountChange={setSkillsCount} projectDir={projectDir} />
+            <SkillsPanel onCountChange={setSkillsCount} projectDir={projectDir} readOnly={cloudReadOnly} />
           </TabsContent>
           <TabsContent value="hooks" className="h-full m-0">
             {/* 不再要求先选项目：HooksPanel 支持无项目时只展示用户级 hooks（~/.kiro/hooks），
                 项目级操作在面板内部按 projectDir 是否为空自行禁用。与同级面板保持一致。 */}
-            <HooksPanel onCountChange={setHooksCount} projectDir={projectDir} />
+            <HooksPanel onCountChange={setHooksCount} projectDir={projectDir} readOnly={cloudReadOnly} />
           </TabsContent>
           <TabsContent value="agents" className="h-full m-0">
-            <AgentsPanel onCountChange={setAgentsCount} projectDir={projectDir} />
+            <AgentsPanel onCountChange={setAgentsCount} projectDir={projectDir} readOnly={cloudReadOnly} />
           </TabsContent>
           <TabsContent value="powers" className="h-full m-0">
-            <PowersPanel onCountChange={setPowersCount} />
+            <PowersPanel onCountChange={setPowersCount} readOnly={cloudReadOnly} />
           </TabsContent>
         </div>
       </Tabs>
