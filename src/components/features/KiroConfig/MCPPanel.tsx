@@ -92,6 +92,7 @@ function MCPPanel({ onCountChange, projectDir, readOnly }: any) {
   }
 
   const handleDelete = async (name: string) => {
+    if (readOnly) return
     if (!await showConfirm(t('mcp.confirmDelete'), `${t('common.confirm')} ${name}?`)) return
     try {
       await deleteMcpServer(name, projectDir || null)
@@ -183,6 +184,7 @@ function MCPPanel({ onCountChange, projectDir, readOnly }: any) {
           onClose={() => setShowAddModal(false)}
           onSuccess={() => { setShowAddModal(false); loadConfig() }}
           projectDir={projectDir}
+          readOnly={readOnly}
         />
       )}
       {editingServer && (
@@ -192,6 +194,7 @@ function MCPPanel({ onCountChange, projectDir, readOnly }: any) {
           onClose={() => setEditingServer(null)}
           onSuccess={() => { setEditingServer(null); loadConfig() }}
           projectDir={projectDir}
+          readOnly={readOnly}
         />
       )}
     </div>

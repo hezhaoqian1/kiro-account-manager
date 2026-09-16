@@ -251,6 +251,7 @@ function AgentsPanel({ onCountChange, projectDir, readOnly }: any) {
   }
 
   const handleSave = async () => {
+    if (readOnly) return
     if (!selectedAgent) return
     setSaving(true)
     try {
@@ -268,6 +269,7 @@ function AgentsPanel({ onCountChange, projectDir, readOnly }: any) {
   }
 
   const handleDelete = async (agent: any) => {
+    if (readOnly) return
     if (!await showConfirm(t('agents.confirmDelete'), t('agents.confirmDeleteAgent', { fileName: agent.fileName }))) return
     try {
       await deleteCustomAgent(agent.fileName, agent.scope, projectDir || null)
@@ -285,6 +287,7 @@ function AgentsPanel({ onCountChange, projectDir, readOnly }: any) {
   }
 
   const handleCreate = async (agentName: string, description: string, tools: string[], model: string, scope: string) => {
+    if (readOnly) return
     // IDE 1.0 起 custom agent 为 .json；只有用户显式写了 .md 才按旧格式创建
     const lower = agentName.toLowerCase()
     const isLegacy = lower.endsWith('.md')
@@ -328,7 +331,8 @@ function AgentsPanel({ onCountChange, projectDir, readOnly }: any) {
           <div className="flex gap-2">
             <button
               onClick={() => setShowCreateModal(true)}
-              className={`cursor-pointer p-2 rounded-lg hover:bg-muted/50 transition-colors duration-200 focus:outline-none focus:ring-2 ${accent.ring}`}
+              disabled={readOnly}
+              className={`cursor-pointer p-2 rounded-lg hover:bg-muted/50 transition-colors duration-200 focus:outline-none focus:ring-2 disabled:opacity-40 disabled:cursor-not-allowed ${accent.ring}`}
               title={t('agents.create')}
             >
               <Plus size={16} className={accent.text} />
@@ -350,7 +354,8 @@ function AgentsPanel({ onCountChange, projectDir, readOnly }: any) {
               <p className={`text-xs mt-2 text-muted-foreground`}>{t('agents.noAgentsHint')}</p>
               <button
                 onClick={() => setShowCreateModal(true)}
-                className={`cursor-pointer mt-4 px-4 py-2 rounded-lg text-sm transition-colors duration-200 focus:outline-none focus:ring-2 ${accent.ring} ${accentSolidButtonClass}`}
+                disabled={readOnly}
+                className={`cursor-pointer mt-4 px-4 py-2 rounded-lg text-sm transition-colors duration-200 focus:outline-none focus:ring-2 disabled:opacity-40 disabled:cursor-not-allowed ${accent.ring} ${accentSolidButtonClass}`}
               >
                 {t('agents.createFirst')}
               </button>
@@ -392,7 +397,8 @@ function AgentsPanel({ onCountChange, projectDir, readOnly }: any) {
                       </div>
                       <button
                         onClick={(e) => { e.stopPropagation(); handleDelete(agent) }}
-                        className="cursor-pointer opacity-0 group-hover:opacity-100 p-2 rounded-lg hover:bg-red-500/20 flex-shrink-0 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-red-500/60"
+                        disabled={readOnly}
+                        className="cursor-pointer opacity-0 group-hover:opacity-100 p-2 rounded-lg hover:bg-red-500/20 flex-shrink-0 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-red-500/60 disabled:opacity-40 disabled:cursor-not-allowed"
                         title={t('common.delete')}
                       >
                         <Trash2 size={16} className="text-red-500" />
@@ -438,7 +444,7 @@ function AgentsPanel({ onCountChange, projectDir, readOnly }: any) {
               </div>
               <button
                 onClick={handleSave}
-                disabled={!hasChanges || saving}
+                disabled={!hasChanges || saving || readOnly}
                 className={`cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 focus:outline-none focus:ring-2 ${accent.ring} ${
                   hasChanges ? accentSolidButtonClass : colors.btnDisabled
                 } disabled:opacity-50`}
@@ -526,6 +532,7 @@ function AgentsPanel({ onCountChange, projectDir, readOnly }: any) {
               <Textarea
                 value={editState.body}
                 onChange={(e) => updateEditState('body', e.target.value)}
+                readOnly={readOnly}
                 placeholder={t('agents.contentPlaceholder')}
                 className={`flex-1 h-full min-h-[400px] p-4 rounded-xl text-sm leading-relaxed font-mono resize-none ${colors.inputFocus}`}
                 style={{

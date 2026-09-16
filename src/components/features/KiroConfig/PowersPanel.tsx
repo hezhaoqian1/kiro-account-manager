@@ -92,6 +92,7 @@ function PowersPanel({ onCountChange, readOnly }: any) {
   }
 
   const handleInstall = async (rec: any) => {
+    if (readOnly) return
     if (installing) return
     setInstalling(rec.name)
     try {
@@ -203,7 +204,8 @@ function PowersPanel({ onCountChange, readOnly }: any) {
                         </div>
                         <button
                           onClick={(e) => { e.stopPropagation(); handleUninstall(power) }}
-                          className="cursor-pointer opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-red-500/20 flex-shrink-0 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-red-500/60"
+                          disabled={readOnly}
+                          className="cursor-pointer opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-red-500/20 flex-shrink-0 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-red-500/60 disabled:opacity-40 disabled:cursor-not-allowed"
                           title={t('powers.uninstall')}
                         >
                           <Trash2 size={14} className="text-red-500" />
@@ -308,7 +310,8 @@ function PowersPanel({ onCountChange, readOnly }: any) {
                 </div>
                 <button
                   onClick={() => handleUninstall(selectedPower)}
-                  className="cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-red-500/60"
+                  disabled={readOnly}
+                  className="cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-red-500/60 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Trash2 size={14} />
                   {t('powers.uninstall')}

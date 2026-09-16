@@ -92,6 +92,7 @@ export default function WorkflowsPanel({
   const dirty = !!selected && draft !== baseline
 
   const handleSave = async () => {
+    if (readOnly) return
     if (!selected) return
     setSaving(true)
     try {
@@ -104,6 +105,7 @@ export default function WorkflowsPanel({
   }
 
   const handleCreate = async () => {
+    if (readOnly) return
     const name = newName.trim()
     if (!name) return
     const file_name = name.endsWith('.workflow.json') || name.endsWith('.workflow.yaml') || name.endsWith('.workflow.yml')
@@ -123,6 +125,7 @@ export default function WorkflowsPanel({
   }
 
   const handleDelete = async () => {
+    if (readOnly) return
     if (!selected) return
     if (!confirm(t('kiroConfig.workflowDeleteConfirm', { name: selected }))) return
     await deleteWorkflow(scope, projectDir, selected).catch(() => {})
@@ -145,7 +148,7 @@ export default function WorkflowsPanel({
           <span className="text-xs font-medium text-muted-foreground">
             {scope === 'project' ? t('kiroConfig.scopeProject') : t('kiroConfig.scopeUser')}
           </span>
-          <Button size="sm" variant="ghost" onClick={() => setCreating(v => !v)}>
+          <Button size="sm" variant="ghost" onClick={() => setCreating(v => !v)} disabled={readOnly}>
             <Plus size={12} />
           </Button>
         </div>
@@ -159,7 +162,7 @@ export default function WorkflowsPanel({
               placeholder={t('kiroConfig.workflowNewPlaceholder')}
               className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:ring-2"
             />
-            <Button size="sm" onClick={handleCreate}>
+            <Button size="sm" onClick={handleCreate} disabled={readOnly}>
               {t('kiroConfig.specCreate')}
             </Button>
           </div>
@@ -209,10 +212,10 @@ export default function WorkflowsPanel({
                   {t('kiroConfig.unsaved')}
                 </span>
               )}
-              <Button size="sm" variant="ghost" onClick={handleDelete} className="text-destructive">
+              <Button size="sm" variant="ghost" onClick={handleDelete} className="text-destructive" disabled={readOnly}>
                 <Trash2 size={12} />
               </Button>
-              <Button size="sm" onClick={handleSave} disabled={!dirty || saving}>
+              <Button size="sm" onClick={handleSave} disabled={!dirty || saving || readOnly}>
                 <Save size={12} />
                 {saving ? t('kiroConfig.saving') : t('kiroConfig.save')}
               </Button>

@@ -371,6 +371,7 @@ function CreateHookModal({ onCreate, onClose, colors, t, accent, accentGradientB
   const canSubmit = !!raw && !invalidName && !duplicateName && !creating
 
   const handleSubmit = async () => {
+    if (readOnly) return
     if (!canSubmit) return
     setCreating(true)
     try {

@@ -6,7 +6,7 @@ import { useApp } from '../../../hooks/useApp'
 import { getThemeAccent, getGradientAccentButton } from './themeAccent'
 import React from 'react'
 
-function EditMCPModal({ name, config, onClose, onSuccess, projectDir }: any) {
+function EditMCPModal({ name, config, onClose, onSuccess, projectDir, readOnly }: any) {
   const { t, theme } = useApp()
   const accent = useMemo(() => getThemeAccent(theme), [theme])
   const accentGradientButtonClass = getGradientAccentButton(accent)
@@ -61,6 +61,7 @@ function EditMCPModal({ name, config, onClose, onSuccess, projectDir }: any) {
 
   // 保存
   const handleSave = async () => {
+    if (readOnly) return
     let parsed: any
     try {
       parsed = JSON.parse(jsonConfig)
@@ -168,7 +169,7 @@ function EditMCPModal({ name, config, onClose, onSuccess, projectDir }: any) {
           </button>
           <button
             onClick={handleSave}
-            disabled={saving || !!parseError}
+            disabled={saving || !!parseError || readOnly}
             className={`cursor-pointer px-6 py-2.5 ${accentGradientButtonClass} rounded-lg text-sm font-medium disabled:opacity-50`}
           >
             {saving ? t('common.saving') : t('common.save')}

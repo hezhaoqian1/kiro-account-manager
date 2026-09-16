@@ -9,7 +9,7 @@ import React from 'react'
 
 const DUPLICATE_STRATEGY_KEY = 'mcpDuplicateStrategy'
 
-function AddMCPModal({ onClose, onSuccess, projectDir }: any) {
+function AddMCPModal({ onClose, onSuccess, projectDir, readOnly }: any) {
   const { t, theme } = useApp()
   const accent = useMemo(() => getThemeAccent(theme), [theme])
   const accentGradientButtonClass = getGradientAccentButton(accent)
@@ -132,6 +132,7 @@ function AddMCPModal({ onClose, onSuccess, projectDir }: any) {
 
   // 保存
   const handleSave = async () => {
+    if (readOnly) return
     if (!parseResult || parseResult.servers.length === 0) {
       setError(parseResult?.error || '无有效配置')
       return
@@ -359,7 +360,7 @@ function AddMCPModal({ onClose, onSuccess, projectDir }: any) {
           </button>
           <button
             onClick={handleSave}
-            disabled={saving || serverCount === 0}
+            disabled={saving || serverCount === 0 || readOnly}
             className={`cursor-pointer px-6 py-2.5 ${accentGradientButtonClass} rounded-lg text-sm font-medium disabled:opacity-50 transition-colors duration-200 focus:outline-none focus:ring-2 ${accent.ring}`}
           >
             {saving ? t('common.saving') : serverCount > 1 ? `添加 ${serverCount} 个` : t('common.add')}
