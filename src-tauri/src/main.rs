@@ -140,6 +140,9 @@ use commands::steering_cmd::{
     delete_steering_file, get_agents_md, get_steering_file, get_steering_files,
     refine_steering_file, save_agents_md, save_steering_file, scan_agents_md,
 };
+use commands::specs_cmd::{
+    create_spec, delete_spec, list_specs, read_spec, save_spec_file,
+};
 //Skills
 use commands::skills_cmd::{
     create_skill, delete_skill, get_skill, get_skills, import_skill_from_github,
@@ -615,6 +618,12 @@ fn main() {
             scan_agents_md,
             get_agents_md,
             save_agents_md,
+            // Specs 管理命令
+            list_specs,
+            read_spec,
+            save_spec_file,
+            create_spec,
+            delete_spec,
             // Skills 管理命令
             get_skills,
             get_skill,

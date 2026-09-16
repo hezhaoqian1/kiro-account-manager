@@ -7,3 +7,4 @@ pub mod mcp;
 pub mod powers;
 pub mod skills;
 pub mod steering;
+pub mod specs;

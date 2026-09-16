@@ -141,6 +141,59 @@ export function refineSteeringFile<T = any>(fileName: string, scope: string, pro
 }
 
 // ============================================================
+// Specs（Kiro 1.1.14）
+// ~/.kiro/specs/<name>/{requirements,design,tasks}.md
+// ============================================================
+
+export interface SpecFile {
+  fileKind: string // "requirements" | "design" | "tasks"
+  content: string
+  size: number
+  modifiedAt?: string | null
+  exists: boolean
+  scope: string
+}
+
+export interface SpecInfo {
+  name: string
+  scope: string
+  requirements: SpecFile
+  design: SpecFile
+  tasks: SpecFile
+}
+
+export interface SpecSummary {
+  name: string
+  scope: string
+}
+
+export function listSpecs<T = SpecSummary[]>(scope: string, projectDir: string | null = null) {
+  return invoke<T>('list_specs', { scope, projectDir })
+}
+
+export function readSpec<T = SpecInfo>(scope: string, projectDir: string | null, name: string) {
+  return invoke<T>('read_spec', { scope, projectDir, name })
+}
+
+export function saveSpecFile(
+  scope: string,
+  projectDir: string | null,
+  name: string,
+  fileKind: string,
+  content: string,
+) {
+  return invoke('save_spec_file', { scope, projectDir, name, fileKind, content })
+}
+
+export function createSpec(scope: string, projectDir: string | null, name: string) {
+  return invoke('create_spec', { scope, projectDir, name })
+}
+
+export function deleteSpec(scope: string, projectDir: string | null, name: string) {
+  return invoke('delete_spec', { scope, projectDir, name })
+}
+
+// ============================================================
 // MCP
 // ============================================================
 
