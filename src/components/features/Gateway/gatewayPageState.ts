@@ -11,7 +11,7 @@ import {
   stopGateway as stopGatewayApi
 } from '../../../api/gatewayApi'
 import { getGroups } from '../../../api/groupTag'
-import { getPrimaryClientApiKey, parseAllowedIps, parseClientApiKeys } from './gatewayPageUtils'
+import { getEffectiveClientApiKey, parseAllowedIps, parseClientApiKeys } from './gatewayPageUtils'
 
 export interface GatewayConfig {
   enabled: boolean;
@@ -106,7 +106,7 @@ export const buildGatewayConfigSnapshot = (config: GatewayConfig) => JSON.string
   enabled: !!config.enabled,
   host: config.host || '',
   port: Number(config.port) || 0,
-  apiKey: getPrimaryClientApiKey(config.clientApiKeysText || config.apiKey),
+  apiKey: getEffectiveClientApiKey(config.clientApiKeysText || config.apiKey),
   clientApiKeysText: config.clientApiKeysText || config.apiKey || '',
   region: config.region || 'us-east-1',
   accountMode: config.accountMode || 'single',
@@ -128,7 +128,7 @@ export const buildGatewayConfigSnapshot = (config: GatewayConfig) => JSON.string
 export const buildGatewayRuntimeSnapshot = (config: GatewayConfig) => JSON.stringify({
   host: config.host || '',
   port: Number(config.port) || 0,
-  apiKey: getPrimaryClientApiKey(config.clientApiKeysText || config.apiKey),
+  apiKey: getEffectiveClientApiKey(config.clientApiKeysText || config.apiKey),
   clientApiKeysText: config.clientApiKeysText || config.apiKey || '',
   region: config.region || 'us-east-1',
   accountMode: config.accountMode || 'single',

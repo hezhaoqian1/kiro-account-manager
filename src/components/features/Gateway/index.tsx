@@ -46,7 +46,9 @@ import {
   createGatewayFieldErrors,
   formatGatewayAccountOptionLabel,
   formatGatewayTimestamp,
-  mergeErrorHistory
+  getEffectiveClientApiKey,
+  mergeErrorHistory,
+  redactGatewayApiKey
 } from './gatewayPageUtils'
 import {
   buildGatewayConfigSnapshot,
@@ -208,8 +210,10 @@ function GatewayPage() {
     },
     {
       id: 'client-key',
+      // 显示掩码后的「生效」key：label 说的是密钥，就该给密钥；
+      // 无生效 key 时退回状态文案（如「未配置客户端 Key」）
       label: t('gateway.clientKey'),
-      value: effectiveSecuritySummary.apiKeyState
+      value: effectiveSecuritySummary.primaryKeyMasked || effectiveSecuritySummary.apiKeyState
     },
     {
       id: 'routing-mode',
@@ -461,12 +465,12 @@ function GatewayPage() {
   const handleConfigureClients = async () => {
     setClientConfigLoading(true)
     try {
-      const apiKey = effectiveConfig.clientApiKeysText || effectiveConfig.apiKey || ''
+      const apiKey = getEffectiveClientApiKey(effectiveConfig.clientApiKeysText || effectiveConfig.apiKey)
       const results = await configureProxyClients({
         clients: selectedClients,
         host: effectiveConfig.host,
         port: effectiveConfig.port,
-        apiKey: apiKey.split('\n')[0]?.trim() || apiKey.trim(),
+        apiKey,
       })
       setClientConfigResults(results)
     } catch (e) {
@@ -618,14 +622,14 @@ function GatewayPage() {
                       <div className="flex flex-col gap-0.5 p-2 rounded-lg bg-muted/30">
                         <span className="text-muted-foreground text-[10px] font-sans">Claude Code → ~/.claude/settings.json</span>
                         <span className="text-foreground">ANTHROPIC_BASE_URL = {effectiveBaseUrl}</span>
-                        <span className="text-foreground">ANTHROPIC_API_KEY = {(effectiveConfig.clientApiKeysText || effectiveConfig.apiKey || '').split('\n')[0]?.substring(0, 12)}***</span>
+                        <span className="text-foreground">ANTHROPIC_API_KEY = {redactGatewayApiKey(getEffectiveClientApiKey(effectiveConfig.clientApiKeysText || effectiveConfig.apiKey))}</span>
                       </div>
                     )}
                     {selectedClients.includes('codex') && (
                       <div className="flex flex-col gap-0.5 p-2 rounded-lg bg-muted/30">
                         <span className="text-muted-foreground text-[10px] font-sans">Codex → ~/.codex/config.toml + auth.json</span>
                         <span className="text-foreground">base_url = "{effectiveBaseUrl}/v1"</span>
-                        <span className="text-foreground">OPENAI_API_KEY = {(effectiveConfig.clientApiKeysText || effectiveConfig.apiKey || '').split('\n')[0]?.substring(0, 12)}***</span>
+                        <span className="text-foreground">OPENAI_API_KEY = {redactGatewayApiKey(getEffectiveClientApiKey(effectiveConfig.clientApiKeysText || effectiveConfig.apiKey))}</span>
                       </div>
                     )}
                   </div>
@@ -677,7 +681,7 @@ function GatewayPage() {
             onOpenChange={setShowApiPlayground}
             accounts={accounts}
             gatewayBaseUrl={effectiveBaseUrl}
-            gatewayApiKey={(effectiveConfig.clientApiKeysText || effectiveConfig.apiKey || '').split('\n')[0]?.trim() || ''}
+            gatewayApiKey={getEffectiveClientApiKey(effectiveConfig.clientApiKeysText || effectiveConfig.apiKey)}
             routing={{
               accountMode: effectiveConfig.accountMode,
               accountId: effectiveConfig.accountId,

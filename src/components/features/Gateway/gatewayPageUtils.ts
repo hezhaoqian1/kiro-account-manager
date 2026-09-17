@@ -47,6 +47,18 @@ export const parseAllowedIps = (value: string | string[]): string[] => {
     .filter(Boolean)
 }
 
+/// 禁用 Key 的前缀，与后端 `effective_client_api_keys` 保持一致。
+/// 以该前缀开头的条目会被后端过滤，不参与鉴权。
+export const DISABLED_API_KEY_PREFIX = '#disabled#'
+
+/**
+ * 把客户端 Key 文本解析为条目列表。
+ *
+ * **保真解析**：保留 `#disabled#` 前缀与 `name:key` 形式，不做语义过滤。
+ * 供 hydrate / 配置往返使用 —— 过滤掉禁用项会导致用户在
+ * ApiKeysDialog 里关掉的 key 被永久删除。要拿「能用的 key」请用
+ * `getEffectiveClientApiKey`。
+ */
 export const parseClientApiKeys = (value: string | string[]): string[] => {
   if (Array.isArray(value)) return value
   return String(value || '')
@@ -56,8 +68,26 @@ export const parseClientApiKeys = (value: string | string[]): string[] => {
     .filter((item, index, items) => items.indexOf(item) === index)
 }
 
-export const getPrimaryClientApiKey = (value: string | string[]): string =>
-  parseClientApiKeys(value)[0] || ''
+/**
+ * 取首个**生效**的客户端 Key；无生效 key 时返回空串。
+ *
+ * 与后端 `effective_client_api_keys`（gateway/mod.rs）对齐：跳过空项、
+ * 跳过 `#disabled#` 项，并剥离 `name:` 前缀 —— 后端的 key 列表里只存裸 key。
+ * 用于「一键写入客户端配置」「Playground 测试」「复制 key」等场景。
+ */
+export const getEffectiveClientApiKey = (value: string | string[]): string => {
+  for (const item of parseClientApiKeys(value)) {
+    if (item.startsWith(DISABLED_API_KEY_PREFIX)) continue
+    const colonIdx = item.indexOf(':')
+    const key = colonIdx > 0 && !item.startsWith('sk-') ? item.slice(colonIdx + 1).trim() : item
+    if (key && !key.startsWith(DISABLED_API_KEY_PREFIX)) return key
+  }
+  return ''
+}
+
+/** 生效的客户端 Key 数量（用于「已配置 N 个」这类统计） */
+export const countEffectiveClientApiKeys = (value: string | string[]): number =>
+  parseClientApiKeys(value).filter(item => !item.startsWith(DISABLED_API_KEY_PREFIX)).length
 
 const isValidIpv4Address = (value: string): boolean => {
   if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(value)) {
@@ -282,8 +312,8 @@ interface ClientSamples {
 }
 
 export const buildClientSamples = (baseUrl: string, apiKey: string | string[]): ClientSamples => {
-  const safeKey = redactGatewayApiKey(getPrimaryClientApiKey(apiKey))
-  const realKey = getPrimaryClientApiKey(apiKey)
+  const safeKey = redactGatewayApiKey(getEffectiveClientApiKey(apiKey))
+  const realKey = getEffectiveClientApiKey(apiKey)
   const anthropicEnv = `ANTHROPIC_BASE_URL=${baseUrl}\nANTHROPIC_API_KEY=${safeKey}`
   const openaiEnv = `OPENAI_BASE_URL=${baseUrl}\nOPENAI_API_KEY=${safeKey}`
   const openaiResponsesCurl = [
@@ -498,13 +528,23 @@ export const buildGatewayActionSummary = ({
 export const buildGatewaySecuritySummary = ({ config }: any) => {
   const allowedIpsCount = parseAllowedIps(config?.allowedIpsText).length
   const clientApiKeys = parseClientApiKeys(config?.clientApiKeysText || config?.apiKey)
+  // 统计的是「生效」key 数，与后端鉴权实际可用数量一致；
+  // 直接把条目总数报出来会让用户误以为被禁用的 key 也在生效
+  const effectiveCount = countEffectiveClientApiKeys(config?.clientApiKeysText || config?.apiKey)
+  const totalCount = clientApiKeys.length
 
   return {
     exposureLabel: config?.localOnly ? '仅本机访问' : '允许远程访问',
     allowedIpsCount,
-    apiKeyState: clientApiKeys.length
-      ? `已配置 ${clientApiKeys.length} 个客户端 Key`
-      : '未配置客户端 Key',
+    apiKeyState: effectiveCount
+      ? (totalCount > effectiveCount
+          ? `已配置 ${effectiveCount} 个客户端 Key（共 ${totalCount} 个，${totalCount - effectiveCount} 个已禁用）`
+          : `已配置 ${effectiveCount} 个客户端 Key`)
+      : (totalCount ? '所有客户端 Key 均已禁用' : '未配置客户端 Key'),
+    // 首个生效 key 的掩码形式；无生效 key 时为空串，调用方据此回退到 apiKeyState
+    primaryKeyMasked: effectiveCount
+      ? redactGatewayApiKey(getEffectiveClientApiKey(config?.clientApiKeysText || config?.apiKey))
+      : '',
     logLevel: config?.logLevel || 'debug'
   }
 }

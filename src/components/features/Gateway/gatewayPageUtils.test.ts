@@ -7,8 +7,10 @@ import {
   buildGatewayConnectHost,
   buildGatewayIntegrationSummary,
   buildGatewaySecuritySummary,
+  countEffectiveClientApiKeys,
   createGatewayFieldErrors,
   formatGatewayAccountOptionLabel,
+  getEffectiveClientApiKey,
   parseClientApiKeys} from './gatewayPageUtils.js'
 
 test('gateway page does not expose the standalone account health dialog', async () => {
@@ -133,6 +135,27 @@ test('parseClientApiKeys trims, deduplicates and drops blank lines', () => {
     parseClientApiKeys(' sk-primary \n\nsk-secondary\nsk-primary \n , sk-third '),
     ['sk-primary', 'sk-secondary', 'sk-third']
   )
+})
+
+// 保真解析：hydrate 往返不能丢掉禁用标记，否则用户在 ApiKeysDialog
+// 里关掉的 key 会被永久删除
+test('parseClientApiKeys keeps disabled entries and name prefixes', () => {
+  assert.deepEqual(
+    parseClientApiKeys('#disabled#Key 1:sk-off\nsk-on'),
+    ['#disabled#Key 1:sk-off', 'sk-on']
+  )
+})
+
+// 与后端 effective_client_api_keys 对齐：跳过禁用项、剥离 name 前缀
+test('getEffectiveClientApiKey skips disabled and strips name prefix', () => {
+  assert.equal(getEffectiveClientApiKey('#disabled#Key 1:sk-off\nKey 2:sk-on'), 'sk-on')
+  assert.equal(getEffectiveClientApiKey('sk-plain'), 'sk-plain')
+  assert.equal(getEffectiveClientApiKey('#disabled#only:sk-x'), '')
+})
+
+test('countEffectiveClientApiKeys counts only enabled keys', () => {
+  assert.equal(countEffectiveClientApiKeys('#disabled#a:sk-1\nb:sk-2'), 1)
+  assert.equal(countEffectiveClientApiKeys(''), 0)
 })
 
 test('createGatewayFieldErrors requires at least one client api key', () => {

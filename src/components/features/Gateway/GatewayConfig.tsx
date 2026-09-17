@@ -27,6 +27,7 @@ const POOL_STATUS_KEYS: Record<string, string> = {
 }
 import { Textarea } from '@/components/ui/textarea'
 import { GatewaySurfaceCard } from './GatewayShared'
+import { countEffectiveClientApiKeys, parseClientApiKeys } from './gatewayPageUtils'
 import ModelMappingDialog from './ModelMappingDialog'
 import ApiKeysDialog from './ApiKeysDialog'
 import PromptFilterRulesDialog from './PromptFilterRulesDialog'
@@ -310,10 +311,11 @@ function GatewayConfig({
                 <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/20">
                   <div className="text-sm text-muted-foreground">
                     {(() => {
-                      const rawKeys = (config.clientApiKeysText || '').split(/[\n,]+/).map((k: string) => k.trim()).filter(Boolean)
-                      const enabledCount = rawKeys.filter((k: string) => !k.startsWith('#disabled#')).length
-                      return rawKeys.length > 0
-                        ? `${rawKeys.length} ${t('gateway.keys')}, ${enabledCount} ${t('gateway.enabledCount')}`
+                      // 复用共享解析，避免与后端 effective_client_api_keys 语义漂移
+                      const totalCount = parseClientApiKeys(config.clientApiKeysText || config.apiKey).length
+                      const enabledCount = countEffectiveClientApiKeys(config.clientApiKeysText || config.apiKey)
+                      return totalCount > 0
+                        ? `${totalCount} ${t('gateway.keys')}, ${enabledCount} ${t('gateway.enabledCount')}`
                         : t('gateway.noApiKey')
                     })()}
                   </div>
