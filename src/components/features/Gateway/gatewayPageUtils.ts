@@ -311,6 +311,101 @@ interface ClientSamples {
   codex: { config: string; apiKey: string }
 }
 
+/** 接入引导卡片所需的一切信息。 */
+export interface ClientRecipe {
+  /** 稳定标识，兼作一键写入的 client 参数（claudeCode / codex） */
+  id: string
+  /** 展示名 */
+  label: string
+  /** 协议标签 */
+  protocol: string
+  /** 客户端应当填的 Base URL（注意：Codex 类需要带 /v1） */
+  baseUrl: string
+  /** 该客户端请求的服务端端点，仅作说明 */
+  endpoint: string
+  /** 鉴权头写法。不同客户端不同，填错必401，故必须显式告知 */
+  authHeader: string
+  /** 掩码后的 Key（展示用） */
+  keyMasked: string
+  /** 真实 Key（一键写入 / 复制用） */
+  key: string
+  /** 配置写入路径；未支持一键写入时为空 */
+  configPath: string
+  /** 是否支持一键写入（后端 configureProxyClients 的 clients 取值） */
+  writable: boolean
+  /** 一键写入时写入的配置文本预览 */
+  configPreview: string
+}
+
+/**
+ * 生成各客户端的接入配方。
+ *
+ * 这里是「接一个客户端该填什么」的**唯一真相源**。历史上这些信息散落在
+ * index.tsx 的 consoleHighlights、写入预览、configureProxyClients 调用点等
+ * 六处，各写各的，导致 API key 过滤语义漂移（见 commit 55d6be1）。
+ *
+ * 关键差异（均有代码依据，不可"拉齐"）：
+ * - Base URL：Anthropic 系给 origin，OpenAI 系还要带 `/v1`
+ *   （对照 gateway_cmd.rs 的 `format!("{}/v1", proxy_origin)`）
+ * - 鉴权头：Anthropic 系用 `x-api-key`，OpenAI 系用 `Authorization: Bearer`
+ *   （对照 gateway/proxy/auth.rs 的 verify_client_auth，两者都认）
+ */
+export const buildGatewayClientRecipes = ({
+  baseUrl,
+  keyMaterial,
+  samples,
+}: {
+  baseUrl: string
+  keyMaterial: string | string[]
+  samples: ClientSamples
+}): ClientRecipe[] => {
+  const key = getEffectiveClientApiKey(keyMaterial)
+  const keyMasked = key ? redactGatewayApiKey(key) : ''
+  const origin = String(baseUrl || '').replace(/\/+$/, '')
+
+  return [
+    {
+      id: 'claudeCode',
+      label: 'Claude Code CLI',
+      protocol: 'Anthropic Messages',
+      baseUrl: origin,
+      endpoint: '/v1/messages',
+      authHeader: 'x-api-key',
+      keyMasked,
+      key,
+      configPath: '~/.claude/settings.json',
+      writable: true,
+      configPreview: samples.claudeCode.config,
+    },
+    {
+      id: 'codex',
+      label: 'Codex CLI',
+      protocol: 'OpenAI Responses',
+      baseUrl: `${origin}/v1`,
+      endpoint: '/v1/responses',
+      authHeader: 'Authorization: Bearer',
+      keyMasked,
+      key,
+      configPath: '~/.codex/auth.json + config.toml',
+      writable: true,
+      configPreview: samples.codex.config,
+    },
+    {
+      id: 'openaiCompatible',
+      label: '其他 OpenAI 兼容客户端',
+      protocol: 'OpenAI Chat',
+      baseUrl: `${origin}/v1`,
+      endpoint: '/v1/chat/completions',
+      authHeader: 'Authorization: Bearer',
+      keyMasked,
+      key,
+      configPath: '',
+      writable: false,
+      configPreview: samples.openaiChat.curl,
+    },
+  ]
+}
+
 export const buildClientSamples = (baseUrl: string, apiKey: string | string[]): ClientSamples => {
   const safeKey = redactGatewayApiKey(getEffectiveClientApiKey(apiKey))
   const realKey = getEffectiveClientApiKey(apiKey)

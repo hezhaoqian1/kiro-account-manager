@@ -1,5 +1,5 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Play, Square, ScrollText, Copy, Zap, TestTube2, Network } from 'lucide-react'
+import { Play, Square, ScrollText, Copy, Zap, TestTube2, Network, AlertCircle } from 'lucide-react'
 import { Alert as AlertPrimitive, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { configureProxyClients } from '../../../api/gatewayApi'
@@ -38,11 +38,14 @@ interface ClientConfigResult {
 }
 import {
   applyGatewayLocalOnlyChange,
+  buildClientSamples,
   buildGatewayActionSummary,
   buildGatewayBaseUrl,
+  buildGatewayClientRecipes,
   buildGatewayIntegrationSummary,
   buildGatewayRoutingSummary,
   buildGatewaySecuritySummary,
+  countEffectiveClientApiKeys,
   createGatewayFieldErrors,
   formatGatewayAccountOptionLabel,
   formatGatewayTimestamp,
@@ -102,6 +105,9 @@ function GatewayPage() {
   const [clientConfigLoading, setClientConfigLoading] = useState(false)
   const [clientConfigResults, setClientConfigResults] = useState<ClientConfigResult[]>([])
   const [selectedClients, setSelectedClients] = useState<string[]>(['claudeCode'])
+  // 「其他 OpenAI 兼容客户端」不在后端一键写入白名单内，只能复制配置，
+  // 故与 selectedClients（后端 clients 参数）分开管理
+  const [showOtherClient, setShowOtherClient] = useState(false)
 
   const hasConfiguredClients = useMemo(
     () => clientConfigResults.some(r => r.success),
@@ -583,7 +589,7 @@ function GatewayPage() {
 
           {/* 快速配置客户端弹窗 */}
           <DialogRoot open={showClientConfig} onOpenChange={setShowClientConfig}>
-            <DialogContent maxWidth="560px">
+            <DialogContent maxWidth="680px" className="max-h-[88vh]">
               <DialogHeader className="">
                 <DialogTitle className="">{t('gateway.quickClientConfig')}</DialogTitle>
                 <DialogDescription className="">
@@ -591,27 +597,125 @@ function GatewayPage() {
                 </DialogDescription>
               </DialogHeader>
 
-              <DialogBody className="flex flex-col gap-4 pt-2">
-                {/* 客户端选择 */}
-                <div className="flex gap-3">
-                  {[
-                    { id: 'claudeCode', label: 'Claude Code CLI', desc: '~/.claude/settings.json' },
-                    { id: 'codex', label: 'Codex CLI', desc: '~/.codex/auth.json + config.toml' },
-                  ].map(client => (
+              <DialogBody className="flex flex-col gap-4 pt-2 overflow-y-auto">
+                {/* 无生效密钥警告：网关能启动，但写入后客户端全部 401 */}
+                {countEffectiveClientApiKeys(effectiveConfig.clientApiKeysText || effectiveConfig.apiKey) === 0 && (
+                  <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-400">
+                    <AlertCircle size={13} className="mt-0.5 shrink-0" />
+                    <span>{t('gateway.noEffectiveKeyWarn')}</span>
+                  </div>
+                )}
+
+                {/* 客户端选择：每张卡直接给出该客户端要填的 Base URL 与鉴权头，
+                    这两项无法从彼此推断，不给就会出现「写入成功但 401」。
+                    数据统一来自 buildGatewayClientRecipes（唯一真相源）。 */}
+                <div className="flex flex-col gap-2">
+                  {buildGatewayClientRecipes({
+                    baseUrl: effectiveBaseUrl,
+                    keyMaterial: effectiveConfig.clientApiKeysText || effectiveConfig.apiKey,
+                    samples: buildClientSamples(effectiveBaseUrl, effectiveConfig.clientApiKeysText || effectiveConfig.apiKey),
+                  }).filter(r => r.writable).map(client => (
                     <div
                       key={client.id}
                       onClick={() => setSelectedClients(prev =>
                         prev.includes(client.id) ? prev.filter(c => c !== client.id) : [...prev, client.id]
                       )}
-                      className={`flex-1 p-3 rounded-xl border cursor-pointer transition-all ${selectedClients.includes(client.id)
+                      className={`rounded-xl border px-3 py-2.5 cursor-pointer transition-all ${selectedClients.includes(client.id)
                           ? 'border-primary bg-primary/5 shadow-sm'
                           : 'border-border bg-muted/20 hover:bg-muted/40'
                         }`}
                     >
-                      <Text size="sm" fw={600} className="text-foreground">{client.label}</Text>
-                      <Text size="xs" className="text-muted-foreground font-mono mt-1">{client.desc}</Text>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Text size="sm" fw={600} className="text-foreground truncate">{client.label}</Text>
+                        <span className="shrink-0 rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-medium text-primary">
+                          {client.protocol}
+                        </span>
+                        <span className="ml-auto shrink-0 font-mono text-[10px] text-muted-foreground truncate" title={client.configPath}>
+                          {client.configPath}
+                        </span>
+                      </div>
+                      {/* 两个关键字段并排：Base URL 与鉴权头。
+                          两者无法互相推导，且填错就 401，所以放在同一行直接对照。 */}
+                      <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="shrink-0 text-muted-foreground">{t('gateway.baseUrlLabel')}</span>
+                          <code className="truncate font-mono text-foreground" title={client.baseUrl}>{client.baseUrl}</code>
+                        </div>
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="shrink-0 text-muted-foreground">{t('gateway.authHeaderLabel')}</span>
+                          <code className="truncate font-mono text-foreground" title={client.authHeader}>{client.authHeader}</code>
+                        </div>
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="shrink-0 text-muted-foreground">{t('gateway.endpointLabel')}</span>
+                          <code className="truncate font-mono text-muted-foreground" title={client.endpoint}>{client.endpoint}</code>
+                        </div>
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="shrink-0 text-muted-foreground">{t('gateway.clientKey')}</span>
+                          <code className="truncate font-mono text-foreground" title={client.keyMasked || '-'}>{client.keyMasked || '-'}</code>
+                        </div>
+                      </div>
                     </div>
                   ))}
+                </div>
+
+                {/* 其他客户端：不在后端一键写入白名单内，只给可复制的完整配置。
+                    没有这一段，长尾客户端（Cherry Studio / Cline / Continue 等）无处可去。 */}
+                <div className="rounded-xl border border-border bg-muted/20">
+                  <button
+                    onClick={() => setShowOtherClient(v => !v)}
+                    className="flex w-full items-center justify-between px-3 py-2 text-left cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-foreground">{t('gateway.otherClient')}</span>
+                      <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">
+                        {t('gateway.otherClientHint')}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-muted-foreground">{showOtherClient ? '▾' : '▸'}</span>
+                  </button>
+
+                  {showOtherClient && (
+                    <div className="flex flex-col gap-2 border-t border-border px-3 py-2.5">
+                      <div className="grid grid-cols-2 gap-2 text-[11px]">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-[10px] text-muted-foreground">{t('gateway.baseUrlLabel')}</span>
+                          <code className="truncate rounded bg-background/60 px-1.5 py-1 font-mono" title={`${effectiveBaseUrl}/v1`}>
+                            {effectiveBaseUrl}/v1
+                          </code>
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-[10px] text-muted-foreground">{t('gateway.authHeaderLabel')}</span>
+                          <code className="truncate rounded bg-background/60 px-1.5 py-1 font-mono">
+                            Authorization: Bearer
+                          </code>
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-[10px] text-muted-foreground">{t('gateway.endpointLabel')}</span>
+                          <code className="truncate rounded bg-background/60 px-1.5 py-1 font-mono">
+                            /v1/chat/completions
+                          </code>
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-[10px] text-muted-foreground">{t('gateway.clientKey')}</span>
+                          <code className="truncate rounded bg-background/60 px-1.5 py-1 font-mono">
+                            {redactGatewayApiKey(getEffectiveClientApiKey(effectiveConfig.clientApiKeysText || effectiveConfig.apiKey))}
+                          </code>
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 w-full text-xs"
+                        onClick={() => copyText(
+                          buildClientSamples(effectiveBaseUrl, effectiveConfig.clientApiKeysText || effectiveConfig.apiKey).openaiChat.curl,
+                          t('gateway.copiedItem', { label: t('gateway.otherClient') })
+                        )}
+                      >
+                        <Copy size={11} className="mr-1" />
+                        {t('gateway.copyCurl')}
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 {/* 配置预览 */}

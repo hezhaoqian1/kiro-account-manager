@@ -1,5 +1,5 @@
 import type React from 'react'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { RotateCw, TrendingUp, Shuffle, Zap, Users, CheckCircle2, Search, Ban, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -55,6 +55,9 @@ interface GatewayConfigProps {
   handleAutoStartToggle: (checked: boolean) => Promise<void>;
   onShowClientConfig?: () => void;
   hasConfiguredClients?: boolean;
+  /** 由父级（接入引导区）触发打开密钥管理弹窗 */
+  openApiKeysDialog?: boolean;
+  onApiKeysDialogOpened?: () => void;
 }
 
 function GatewayConfig({
@@ -70,10 +73,19 @@ function GatewayConfig({
   handleAutoStartToggle,
   onShowClientConfig,
   hasConfiguredClients = false,
+  openApiKeysDialog = false,
+  onApiKeysDialogOpened,
 }: GatewayConfigProps) {
   const { t } = useApp()
   const [showModelMappingDialog, setShowModelMappingDialog] = useState(false)
   const [showApiKeysDialog, setShowApiKeysDialog] = useState(false)
+
+  // 父级（接入引导区）请求打开密钥弹窗：响应后立即回吐信号，避免重复触发
+  useEffect(() => {
+    if (!openApiKeysDialog) return
+    setShowApiKeysDialog(true)
+    onApiKeysDialogOpened?.()
+  }, [openApiKeysDialog, onApiKeysDialogOpened])
   const [showPromptFilterRulesDialog, setShowPromptFilterRulesDialog] = useState(false)
   const [showAccountPoolDialog, setShowAccountPoolDialog] = useState(false)
   const [poolSearchQuery, setPoolSearchQuery] = useState('')
