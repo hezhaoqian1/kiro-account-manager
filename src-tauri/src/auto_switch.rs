@@ -12,8 +12,9 @@ use tokio::time::{interval, Duration};
 // 默认值
 const DEFAULT_THRESHOLD: f64 = 1.0; // 余额阈值
 const DEFAULT_INTERVAL: i32 = 5; // 检查间隔（分钟）
-/// 关闭时轮询间隔：过长会导致用户打开开关后长时间不生效（旧实现 30 分钟）
-const DISABLED_POLL_SECS: u64 = 15;
+/// 关闭时轮询间隔：用于让用户打开开关后尽快生效（旧实现 30 分钟，开启后长时间不生效）。
+/// 取 60 秒：比 15 秒显著减少无效轮询与日志，同时开启后最多等 1 分钟即可生效。
+const DISABLED_POLL_SECS: u64 = 60;
 
 /// 启动自动换号后台任务
 pub fn start_auto_switch_task(app_handle: AppHandle) {
