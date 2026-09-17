@@ -333,8 +333,10 @@ export interface ClientRecipe {
   configPath: string
   /** 是否支持一键写入（后端 configureProxyClients 的 clients 取值） */
   writable: boolean
-  /** 一键写入时写入的配置文本预览 */
-  configPreview: string
+  /** 一键写入时写入的配置文本预览（仅 writable 卡有值；后端实际写入由 Rust 端重建，这里只作展示） */
+  writeConfig: string
+  /** 不可一键写入客户端的复制样本（如 OpenAI 兼容客户端的 curl）；writable 卡为空 */
+  copySample: string
 }
 
 /**
@@ -375,7 +377,8 @@ export const buildGatewayClientRecipes = ({
       key,
       configPath: '~/.claude/settings.json',
       writable: true,
-      configPreview: samples.claudeCode.config,
+      writeConfig: samples.claudeCode.config,
+      copySample: '',
     },
     {
       id: 'codex',
@@ -388,7 +391,8 @@ export const buildGatewayClientRecipes = ({
       key,
       configPath: '~/.codex/auth.json + config.toml',
       writable: true,
-      configPreview: samples.codex.config,
+      writeConfig: samples.codex.config,
+      copySample: '',
     },
     {
       id: 'openaiCompatible',
@@ -401,7 +405,8 @@ export const buildGatewayClientRecipes = ({
       key,
       configPath: '',
       writable: false,
-      configPreview: samples.openaiChat.curl,
+      writeConfig: '',
+      copySample: samples.openaiChat.curl,
     },
   ]
 }
@@ -442,7 +447,7 @@ export const buildClientSamples = (baseUrl: string, apiKey: string | string[]): 
     '',
     '[model_providers.custom]',
     'name = "custom"',
-    `base_url = "${baseUrl}"`,
+    `base_url = "${baseUrl}/v1"`,
     'wire_api = "responses"',
     'requires_openai_auth = true',
     '',

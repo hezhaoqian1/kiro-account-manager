@@ -191,6 +191,17 @@ function GatewayPage() {
     }),
     [effectiveBaseUrl, effectiveConfig.clientApiKeysText, effectiveConfig.apiKey, logDir, errorHistory]
   )
+  // 客户端接入配方：弹窗里两张可写客户端卡 + 「其他客户端」块的唯一数据源。
+  const clientRecipes = useMemo(
+    () => buildGatewayClientRecipes({
+      baseUrl: effectiveBaseUrl,
+      keyMaterial: effectiveConfig.clientApiKeysText || effectiveConfig.apiKey,
+      samples: buildClientSamples(effectiveBaseUrl, effectiveConfig.clientApiKeysText || effectiveConfig.apiKey),
+    }),
+    [effectiveBaseUrl, effectiveConfig.clientApiKeysText, effectiveConfig.apiKey]
+  )
+  const writableClientRecipes = clientRecipes.filter(r => r.writable)
+  const otherClientRecipe = clientRecipes.find(r => !r.writable)
   const effectiveRoutingSummary = useMemo(() => buildGatewayRoutingSummary({
     config: effectiveConfig,
     counts: {
@@ -610,11 +621,7 @@ function GatewayPage() {
                     这两项无法从彼此推断，不给就会出现「写入成功但 401」。
                     数据统一来自 buildGatewayClientRecipes（唯一真相源）。 */}
                 <div className="flex flex-col gap-2">
-                  {buildGatewayClientRecipes({
-                    baseUrl: effectiveBaseUrl,
-                    keyMaterial: effectiveConfig.clientApiKeysText || effectiveConfig.apiKey,
-                    samples: buildClientSamples(effectiveBaseUrl, effectiveConfig.clientApiKeysText || effectiveConfig.apiKey),
-                  }).filter(r => r.writable).map(client => (
+                  {writableClientRecipes.map(client => (
                     <div
                       key={client.id}
                       onClick={() => setSelectedClients(prev =>
@@ -679,26 +686,26 @@ function GatewayPage() {
                       <div className="grid grid-cols-2 gap-2 text-[11px]">
                         <div className="flex flex-col gap-0.5">
                           <span className="text-[10px] text-muted-foreground">{t('gateway.baseUrlLabel')}</span>
-                          <code className="truncate rounded bg-background/60 px-1.5 py-1 font-mono" title={`${effectiveBaseUrl}/v1`}>
-                            {effectiveBaseUrl}/v1
+                          <code className="truncate rounded bg-background/60 px-1.5 py-1 font-mono" title={otherClientRecipe?.baseUrl}>
+                            {otherClientRecipe?.baseUrl}
                           </code>
                         </div>
                         <div className="flex flex-col gap-0.5">
                           <span className="text-[10px] text-muted-foreground">{t('gateway.authHeaderLabel')}</span>
                           <code className="truncate rounded bg-background/60 px-1.5 py-1 font-mono">
-                            Authorization: Bearer
+                            {otherClientRecipe?.authHeader}
                           </code>
                         </div>
                         <div className="flex flex-col gap-0.5">
                           <span className="text-[10px] text-muted-foreground">{t('gateway.endpointLabel')}</span>
                           <code className="truncate rounded bg-background/60 px-1.5 py-1 font-mono">
-                            /v1/chat/completions
+                            {otherClientRecipe?.endpoint}
                           </code>
                         </div>
                         <div className="flex flex-col gap-0.5">
                           <span className="text-[10px] text-muted-foreground">{t('gateway.clientKey')}</span>
                           <code className="truncate rounded bg-background/60 px-1.5 py-1 font-mono">
-                            {redactGatewayApiKey(getEffectiveClientApiKey(effectiveConfig.clientApiKeysText || effectiveConfig.apiKey))}
+                            {otherClientRecipe?.keyMasked || '-'}
                           </code>
                         </div>
                       </div>
@@ -707,7 +714,7 @@ function GatewayPage() {
                         variant="outline"
                         className="h-7 w-full text-xs"
                         onClick={() => copyText(
-                          buildClientSamples(effectiveBaseUrl, effectiveConfig.clientApiKeysText || effectiveConfig.apiKey).openaiChat.curl,
+                          otherClientRecipe?.copySample ?? '',
                           t('gateway.copiedItem', { label: t('gateway.otherClient') })
                         )}
                       >
@@ -718,24 +725,22 @@ function GatewayPage() {
                   )}
                 </div>
 
-                {/* 配置预览 */}
+                {/* 配置预览：直接渲染 recipe.configPreview（= 一键写入时实际写入的完整文本），
+                    不再手搓 env 行——历史上手写版与真实写入内容对不上
+                    （如 Claude Code 实际写 ANTHROPIC_AUTH_TOKEN 而非 API_KEY）。 */}
                 <div className="bg-muted/30 border border-border rounded-xl p-3">
                   <Text size="xs" className="text-muted-foreground mb-2">{t('gateway.configToWrite')}</Text>
                   <div className="flex flex-col gap-2 font-mono text-[11px]">
-                    {selectedClients.includes('claudeCode') && (
-                      <div className="flex flex-col gap-0.5 p-2 rounded-lg bg-muted/30">
-                        <span className="text-muted-foreground text-[10px] font-sans">Claude Code → ~/.claude/settings.json</span>
-                        <span className="text-foreground">ANTHROPIC_BASE_URL = {effectiveBaseUrl}</span>
-                        <span className="text-foreground">ANTHROPIC_API_KEY = {redactGatewayApiKey(getEffectiveClientApiKey(effectiveConfig.clientApiKeysText || effectiveConfig.apiKey))}</span>
-                      </div>
-                    )}
-                    {selectedClients.includes('codex') && (
-                      <div className="flex flex-col gap-0.5 p-2 rounded-lg bg-muted/30">
-                        <span className="text-muted-foreground text-[10px] font-sans">Codex → ~/.codex/config.toml + auth.json</span>
-                        <span className="text-foreground">base_url = "{effectiveBaseUrl}/v1"</span>
-                        <span className="text-foreground">OPENAI_API_KEY = {redactGatewayApiKey(getEffectiveClientApiKey(effectiveConfig.clientApiKeysText || effectiveConfig.apiKey))}</span>
-                      </div>
-                    )}
+                    {selectedClients.map((id) => {
+                      const recipe = writableClientRecipes.find(r => r.id === id)
+                      if (!recipe) return null
+                      return (
+                        <div key={id} className="flex flex-col gap-0.5 p-2 rounded-lg bg-muted/30">
+                          <span className="text-muted-foreground text-[10px] font-sans">{recipe.label} → {recipe.configPath}</span>
+                          <pre className="whitespace-pre-wrap break-all text-foreground">{recipe.writeConfig}</pre>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
 

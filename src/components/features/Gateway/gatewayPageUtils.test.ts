@@ -27,8 +27,7 @@ test('formatGatewayAccountOptionLabel shows email with quota and status', () => 
     userId: 'user-id-foo',
     id: 'abc',
     status: 'active',
-    quota: 100,
-    used: 30
+    usageData: { usageBreakdownList: [{ usageLimit: 100, currentUsage: 30 }] }
   })
   assert.equal(label, 'foo@example.com 剩余 70/100')
 })
@@ -39,8 +38,7 @@ test('formatGatewayAccountOptionLabel shows banned status', () => {
     userId: 'user-id',
     id: 'def',
     status: 'banned',
-    quota: 100,
-    used: 95.0
+    usageData: { usageBreakdownList: [{ usageLimit: 100, currentUsage: 95 }] }
   })
   // banned 账号是 unavailable 状态，getQuota/getUsed 返回 0
   assert.strictEqual(label, 'test@example.com 剩余 0/0 [banned]')
@@ -51,8 +49,7 @@ test('formatGatewayAccountOptionLabel falls back to userId when email is missing
     formatGatewayAccountOptionLabel({
       userId: 'builder-user-1',
       id: '0d24370c-1111-2222-3333-444455556666',
-      quota: 50,
-      used: 10
+      usageData: { usageBreakdownList: [{ usageLimit: 50, currentUsage: 10 }] }
     }),
     'builder-user-1 剩余 40/50'
   )
@@ -60,8 +57,7 @@ test('formatGatewayAccountOptionLabel falls back to userId when email is missing
   assert.equal(
     formatGatewayAccountOptionLabel({
       id: '0d24370c-1111-2222-3333-444455556666',
-      quota: 0,
-      used: 0
+      usageData: { usageBreakdownList: [{ usageLimit: 0, currentUsage: 0 }] }
     }),
     '未知账号 剩余 0/0'
   )
