@@ -459,9 +459,11 @@ pub struct AgentsMdFile {
 
 pub const AGENTS_MD: &str = "AGENTS.md";
 
-/// 递归时跳过的目录：版本控制、依赖、构建产物、编辑器配置。
-/// 与 IDE 的忽略规则不完全等价（IDE 走 fs_read 权限 + .gitignore + .kiroignore），
-/// 但能覆盖绝大多数场景，且不需要引入额外的依赖。
+/// 递归时**无条件**跳过的目录：版本控制、依赖、构建产物、编辑器配置。
+/// 这些不受 `.kiroignore` / `.gitignore` 影响（避免用户误写 `!node_modules` 后扫爆）。
+///
+/// 用户级的忽略走 `.kiroignore` 与 `.gitignore`（见 `DEFAULT_IGNORE_FILES`）。
+/// 与 IDE 的差异：IDE 还叠加了 `fs_read` 权限判定，那是运行时状态，管理端拿不到。
 const SKIP_DIRS: &[&str] = &[
     ".git",
     ".svn",
@@ -482,6 +484,134 @@ const SKIP_DIRS: &[&str] = &[
 /// 递归深度上限，防止超大仓库或异常符号链接导致长时间遍历。
 const MAX_DEPTH: usize = 12;
 
+/// 忽略规则文件，按优先级从高到低。
+///
+/// IDE 的忽略链是「fs_read 权限 + .gitignore + .kiroignore」（详见
+/// `docs/Kiro 1.1.14/嵌套AGENTS.md加载机制.md` §3.2）；权限那层依赖 IDE 的运行时状态，
+/// 管理端拿不到，这里覆盖文件侧的两种。`agentIgnoreFiles` 是用户配置的额外忽略文件，
+/// 由调用方传入（当前 `kiroAgent.agentIgnoreFiles` 默认只含 `.gitignore`）。
+const DEFAULT_IGNORE_FILES: &[&str] = &[".kiroignore", ".gitignore"];
+
+/// 单条忽略规则的匹配结果
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IgnoreVerdict {
+    /// 没有规则命中，按默认（不忽略）处理
+    None,
+    /// 命中普通规则：忽略
+    Ignore,
+    /// 命中 `!` 开头的否定规则：取消忽略
+    Negate,
+}
+
+/// 一个目录作用域内的忽略规则集（类似 gitignore 的语义）。
+#[derive(Debug, Default, Clone)]
+struct IgnoreRules {
+    /// `(pattern, 是否否定, 是否目录限定)`
+    patterns: Vec<(String, bool, bool)>,
+}
+
+impl IgnoreRules {
+    /// 从一段忽略文件内容解析规则，追加进本集合。
+    fn extend_from(&mut self, text: &str) {
+        for line in text.lines() {
+            let line = line.trim_end();
+            // 空行与注释跳过（行首空白已由 trim 处理，故 `#` 判断在 trim 之后）
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+            let (body, negated) = match trimmed.strip_prefix('!') {
+                Some(rest) => (rest, true),
+                None => (trimmed, false),
+            };
+            if body.is_empty() {
+                continue;
+            }
+            let dir_only = body.ends_with('/');
+            let body = body.trim_end_matches('/');
+            if body.is_empty() {
+                continue;
+            }
+            self.patterns.push((body.to_string(), negated, dir_only));
+        }
+    }
+
+    /// 判断相对路径（正斜杠）是否被忽略。
+    ///
+    /// 后写的规则优先（与 gitignore 一致），故逆序扫描并取第一个命中。
+    /// `is_dir` 用于匹配 `foo/` 这类目录限定规则。
+    fn matches(&self, rel_path: &str, is_dir: bool) -> IgnoreVerdict {
+        for (pattern, negated, dir_only) in self.patterns.iter().rev() {
+            if *dir_only && !is_dir {
+                continue;
+            }
+            if pattern_matches(pattern, rel_path, is_dir) {
+                return if *negated {
+                    IgnoreVerdict::Negate
+                } else {
+                    IgnoreVerdict::Ignore
+                };
+            }
+        }
+        IgnoreVerdict::None
+    }
+}
+
+/// gitignore 风格的最小实现：支持 `*` / `?` / 前导或内嵌 `/` 锚定 / 目录前缀匹配。
+///
+/// 不做字符类 `[abc]` 与 `**`，避免引入 glob 依赖；这两类在项目级忽略文件里罕见，
+/// 漏配的后果仅是「扫描结果与 IDE 略有差异」，不会误改文件。
+fn pattern_matches(pattern: &str, rel_path: &str, is_dir: bool) -> bool {
+    let pat = pattern.trim_matches('/');
+    let path_parts: Vec<&str> = rel_path.split('/').filter(|s| !s.is_empty()).collect();
+    let pat_parts: Vec<&str> = pat.split('/').filter(|s| !s.is_empty()).collect();
+    if pat_parts.is_empty() {
+        return false;
+    }
+
+    // 含 `/` 的规则锚定到项目根；否则任意层级皆可命中
+    let anchored = pattern.contains('/');
+
+    if anchored {
+        if pat_parts.len() > path_parts.len() {
+            return false;
+        }
+        for (i, pp) in pat_parts.iter().enumerate() {
+            if !seg_matches(pp, path_parts[i]) {
+                return false;
+            }
+        }
+        // 规则是路径前缀 → 目录内的所有内容都被忽略
+        true
+    } else {
+        // 纯文件名规则：任一路径段命中即可
+        path_parts.iter().any(|seg| seg_matches(&pat_parts[0], seg))
+            || (!is_dir && path_parts.last().is_some_and(|last| seg_matches(&pat_parts[0], last)))
+    }
+}
+
+/// 单个路径段的 glob 匹配（仅 `*` 与 `?`）。
+fn seg_matches(pattern: &str, seg: &str) -> bool {
+    let p: Vec<char> = pattern.chars().collect();
+    let s: Vec<char> = seg.chars().collect();
+    // 经典双序列 DP，模式与段都很短（文件名级），开销可忽略
+    let mut dp = vec![vec![false; s.len() + 1]; p.len() + 1];
+    dp[0][0] = true;
+    for i in 1..=p.len() {
+        if p[i - 1] == '*' {
+            dp[i][0] = dp[i - 1][0];
+        }
+        for j in 1..=s.len() {
+            dp[i][j] = match p[i - 1] {
+                '*' => dp[i - 1][j] || dp[i][j - 1],
+                '?' => dp[i - 1][j - 1],
+                c => dp[i - 1][j - 1] && c == s[j - 1],
+            };
+        }
+    }
+    dp[p.len()][s.len()]
+}
+
 impl SteeringManager {
     /// 递归扫描项目内的所有 `AGENTS.md`。
     ///
@@ -497,12 +627,32 @@ impl SteeringManager {
         }
 
         let mut out: Vec<AgentsMdFile> = Vec::new();
-        Self::walk_agents_md(&root, &root, 0, &mut out);
+        // 项目根的忽略文件先入栈，子目录的随后追加（gitignore 语义：越深优先级越高）
+        let root_rules = Self::load_ignore_rules(&root, DEFAULT_IGNORE_FILES);
+        Self::walk_agents_md(&root, &root, 0, &root_rules, &mut out);
         out.sort_by(|a, b| a.depth.cmp(&b.depth).then_with(|| a.rel_path.cmp(&b.rel_path)));
         Ok(out)
     }
 
-    fn walk_agents_md(root: &Path, dir: &Path, depth: usize, out: &mut Vec<AgentsMdFile>) {
+    /// 读取一个目录下的忽略文件，合并成规则集。文件不存在或损坏时返回空集。
+    fn load_ignore_rules(dir: &Path, files: &[&str]) -> IgnoreRules {
+        let mut rules = IgnoreRules::default();
+        for name in files {
+            let path = dir.join(name);
+            if let Ok(text) = fs::read_to_string(&path) {
+                rules.extend_from(&text);
+            }
+        }
+        rules
+    }
+
+    fn walk_agents_md(
+        root: &Path,
+        dir: &Path,
+        depth: usize,
+        parent_rules: &IgnoreRules,
+        out: &mut Vec<AgentsMdFile>,
+    ) {
         if depth > MAX_DEPTH {
             return;
         }
@@ -519,11 +669,34 @@ impl SteeringManager {
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
 
-            if path.is_dir() {
-                if SKIP_DIRS.iter().any(|d| name.eq_ignore_ascii_case(d)) {
-                    continue;
+            // 相对项目根的路径（正斜杠），忽略规则按此匹配
+            let rel_owned = path
+                .strip_prefix(root)
+                .map(|r| r.to_string_lossy().replace('\\', "/"))
+                .unwrap_or_else(|_| name.clone());
+
+            let is_dir = path.is_dir();
+
+            // 硬编码跳过目录先于忽略文件：.git / node_modules 这类无论怎么写都要跳过
+            if is_dir && SKIP_DIRS.iter().any(|d| name.eq_ignore_ascii_case(d)) {
+                continue;
+            }
+
+            if parent_rules.matches(&rel_owned, is_dir) == IgnoreVerdict::Ignore {
+                continue;
+            }
+
+            if is_dir {
+                // 子目录若有自己的忽略文件，合并后向下传递；否则沿用父级。
+                // 用 clone 而非 Rc：规则集很小，且避免了把生命周期缠进递归签名。
+                let mut child_rules = parent_rules.clone();
+                for text in DEFAULT_IGNORE_FILES
+                    .iter()
+                    .filter_map(|f| fs::read_to_string(path.join(f)).ok())
+                {
+                    child_rules.extend_from(&text);
                 }
-                Self::walk_agents_md(root, &path, depth + 1, out);
+                Self::walk_agents_md(root, &path, depth + 1, &child_rules, out);
                 continue;
             }
 
@@ -634,7 +807,7 @@ impl SteeringManager {
 
 #[cfg(test)]
 mod tests {
-    use super::SteeringManager;
+    use super::{IgnoreRules, IgnoreVerdict, SteeringManager};
     use std::fs;
     use std::path::PathBuf;
 
@@ -675,6 +848,50 @@ mod tests {
         assert!(
             content.contains("Cargo.toml"),
             "workspace summary should mention Cargo.toml"
+        );
+
+        fs::remove_dir_all(project_root).ok();
+    }
+
+    #[test]
+    fn ignore_rules_respect_kiroignore_patterns() {
+        let mut rules = IgnoreRules::default();
+        rules.extend_from("# comment\n\nbuild/\n*.tmp\n!important.tmp\n");
+        assert_eq!(rules.matches("build", true), IgnoreVerdict::Ignore);
+        assert_eq!(rules.matches("build/lib", true), IgnoreVerdict::Ignore);
+        assert_eq!(rules.matches("src/x.tmp", false), IgnoreVerdict::Ignore);
+        assert_eq!(rules.matches("src/important.tmp", false), IgnoreVerdict::Negate);
+    }
+
+    #[test]
+    fn ignore_rules_anchor_patterns_with_slash() {
+        let mut rules = IgnoreRules::default();
+        rules.extend_from("docs/internal\n");
+        assert_eq!(rules.matches("docs/internal", true), IgnoreVerdict::Ignore);
+        // 锚定规则不应命中另一处的同名目录
+        assert_eq!(rules.matches("src/docs/internal", true), IgnoreVerdict::None);
+    }
+
+    #[test]
+    fn scan_agents_md_skips_ignored_directories() {
+        let project_root = temp_dir("kiroignore");
+        fs::create_dir_all(project_root.join("src")).expect("src dir should exist");
+        fs::create_dir_all(project_root.join("vendor")).expect("vendor dir should exist");
+        fs::write(project_root.join(".kiroignore"), "vendor/\n").expect("kiroignore written");
+        fs::write(project_root.join("AGENTS.md"), "root").expect("root agents written");
+        fs::write(project_root.join("src/AGENTS.md"), "src").expect("src agents written");
+        fs::write(project_root.join("vendor/AGENTS.md"), "vendor").expect("vendor agents written");
+
+        let found =
+            SteeringManager::scan_agents_md(project_root.to_string_lossy().as_ref())
+                .expect("scan should succeed");
+        let rel_paths: Vec<&str> = found.iter().map(|f| f.rel_path.as_str()).collect();
+
+        assert!(rel_paths.contains(&"AGENTS.md"), "root AGENTS.md should be found");
+        assert!(rel_paths.contains(&"src/AGENTS.md"), "src AGENTS.md should be found");
+        assert!(
+            !rel_paths.contains(&"vendor/AGENTS.md"),
+            "vendor/AGENTS.md should be ignored by .kiroignore, got {rel_paths:?}"
         );
 
         fs::remove_dir_all(project_root).ok();
