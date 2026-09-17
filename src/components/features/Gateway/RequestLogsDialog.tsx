@@ -2,10 +2,16 @@ import React, { useState, useEffect, useCallback } from 'react'
 import {
   clearAllCache,
   clearGatewayRequestLogs,
+  cleanupExpiredCache,
+  cleanupStaleHealth,
+  getAllAccountHealth,
   getCacheStats,
+  getGatewayEndpointStats,
+  getGatewayModelStats,
   getGatewayRequestLogs,
   getGatewayRequestStats,
-  openGatewayLogDir
+  openGatewayLogDir,
+  resetAccountHealth
 } from '../../../api/gatewayApi'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -76,6 +82,34 @@ interface CacheStats {
   persistent_cache_enabled: boolean
 }
 
+// 按模型 / 端点维度的聚合统计（后端 log_store 同源）
+interface ModelStat {
+  model: string
+  count: number
+  success: number
+  error: number
+  totalInputTokens: number
+  totalOutputTokens: number
+}
+
+interface EndpointStat {
+  endpoint: string
+  count: number
+  success: number
+  error: number
+}
+
+// 网关运行时账号健康度（键为账号 ID）
+interface AccountHealth {
+  accountId: string
+  activeConnections: number
+  recentFailures: number
+  recentSuccesses: number
+  isHealthy: boolean
+  avgResponseTimeMs: number
+  healthScore: number
+}
+
 interface RequestLogsDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -113,6 +147,13 @@ export function RequestLogsDialog({
   const [requestLogs, setRequestLogs] = useState<ProcessedRequestLog[]>([])
   const [requestStats, setRequestStats] = useState<GatewayRequestStats | null>(null)
   const [cacheStats, setCacheStats] = useState<CacheStats | null>(null)
+  // 维度统计与账号健康度：两个折叠区，默认收起（不抢日志表的视觉）
+  const [modelStats, setModelStats] = useState<ModelStat[]>([])
+  const [endpointStats, setEndpointStats] = useState<EndpointStat[]>([])
+  const [health, setHealth] = useState<Record<string, AccountHealth>>({})
+  const [healthUnavailable, setHealthUnavailable] = useState(false)
+  const [showBreakdown, setShowBreakdown] = useState(false)
+  const [showHealth, setShowHealth] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [activeFilter, setActiveFilter] = useState<'all' | 'success' | 'error'>('all')
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null)
@@ -144,6 +185,19 @@ export function RequestLogsDialog({
         getGatewayRequestStats<GatewayRequestStats>(),
         getCacheStats<CacheStats>().catch(() => null)
       ])
+
+      // 维度统计与健康度并行拉取；两者的失败都不应拖垮日志主流程
+      const [models, endpoints] = await Promise.all([
+        getGatewayModelStats<ModelStat[]>().catch(() => []),
+        getGatewayEndpointStats<EndpointStat[]>().catch(() => [])
+      ])
+      setModelStats(models || [])
+      setEndpointStats(endpoints || [])
+      // 网关未启动时后端返回 Err，这是正常状态（"Gateway not initialized"），
+      // 不是故障，因此用健康度是否可用来驱动提示而不是弹错误
+      getAllAccountHealth<Record<string, AccountHealth>>()
+        .then(v => { setHealth(v || {}); setHealthUnavailable(false) })
+        .catch(() => { setHealth({}); setHealthUnavailable(true) })
 
       setRequestLogs(logs.map(log => ({
         id: `${log.requestIndex}-${log.occurredAt}`,
@@ -180,6 +234,41 @@ export function RequestLogsDialog({
       toast.success(t('gatewayLogs.toastCacheCleared'))
     } catch (err) {
       toast.error(t('gatewayLogs.toastClearCacheFailed', { error: String(err) }))
+    }
+  }
+
+  // 清理过期缓存：后端返回清理条数，直接回显使用户知道到底动了什么
+  const handleCleanupExpired = async () => {
+    try {
+      const removed = await cleanupExpiredCache()
+      toast.success(t('gatewayLogs.toastExpiredCleaned', { count: removed }))
+      await fetchRequestLogs()
+    } catch (err) {
+      toast.error(t('gatewayLogs.toastClearCacheFailed', { error: String(err) }))
+    }
+  }
+
+  // 重置单个账号健康度：让刚恢复的账号立刻重新参与调度，无需等滑动窗口自然衰减
+  const handleResetHealth = async (accountId: string) => {
+    try {
+      await resetAccountHealth(accountId)
+      const next = await getAllAccountHealth<Record<string, AccountHealth>>().catch(() => null)
+      if (next) setHealth(next)
+      toast.success(t('gatewayLogs.toastHealthReset'))
+    } catch (err) {
+      toast.error(t('gatewayLogs.toastHealthResetFailed', { error: String(err) }))
+    }
+  }
+
+  // 清理超过 1 小时未检查的健康条目（后端 stale_duration 固定 3600s）
+  const handleCleanupStale = async () => {
+    try {
+      await cleanupStaleHealth()
+      const next = await getAllAccountHealth<Record<string, AccountHealth>>().catch(() => null)
+      if (next) setHealth(next)
+      toast.success(t('gatewayLogs.toastStaleCleaned'))
+    } catch (err) {
+      toast.error(t('gatewayLogs.toastHealthResetFailed', { error: String(err) }))
     }
   }
 
@@ -307,7 +396,20 @@ export function RequestLogsDialog({
                   <Database size={10} />
                   {t('gatewayLogs.clearCache')}
                 </Button>
-              )}
+                )}
+
+                {cacheStats && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleCleanupExpired}
+                    className="h-6 text-[10px] text-muted-foreground hover:text-foreground px-1.5 gap-1 font-normal"
+                    title={t('gatewayLogs.cleanupExpiredTitle')}
+                  >
+                    <Trash2 size={10} />
+                    {t('gatewayLogs.cleanupExpired')}
+                  </Button>
+                )}
             </div>
           </div>
 
@@ -407,6 +509,122 @@ export function RequestLogsDialog({
               </Button>
             </div>
           </div>
+
+          {/* 维度统计与账号健康度：两个折叠区，默认收起以免抢日志表的视觉 */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setShowBreakdown(v => !v)}
+              className="flex items-center gap-1 rounded border px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+            >
+              {showBreakdown ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+              {t('gatewayLogs.breakdownTitle')}
+              <span className="opacity-60">({modelStats.length}/{endpointStats.length})</span>
+            </button>
+
+            <button
+              onClick={() => setShowHealth(v => !v)}
+              className="flex items-center gap-1 rounded border px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+            >
+              {showHealth ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+              {t('gatewayLogs.healthTitle')}
+              {!healthUnavailable && <span className="opacity-60">({Object.keys(health).length})</span>}
+            </button>
+          </div>
+
+          {showBreakdown && (
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                { key: 'model', title: t('gatewayLogs.byModel'), rows: modelStats.map(s => ({ name: s.model, count: s.count, success: s.success, error: s.error })) },
+                { key: 'endpoint', title: t('gatewayLogs.byEndpoint'), rows: endpointStats.map(s => ({ name: s.endpoint, count: s.count, success: s.success, error: s.error })) }
+              ]).map(group => (
+                <div key={group.key} className="rounded-lg border min-h-0">
+                  <div className="border-b bg-muted/20 px-2.5 py-1.5 text-[11px] font-medium">{group.title}</div>
+                  <div className="max-h-40 overflow-auto">
+                    {group.rows.length === 0 ? (
+                      <p className="px-2.5 py-3 text-[11px] text-muted-foreground">{t('gatewayLogs.noData')}</p>
+                    ) : (
+                      <table className="w-full text-[11px]">
+                        <tbody>
+                          {group.rows.map(r => (
+                            <tr key={r.name} className="border-b border-border/40 last:border-0">
+                              <td className="max-w-0 truncate px-2.5 py-1 font-mono" title={r.name}>{r.name}</td>
+                              <td className="w-12 px-1 py-1 text-right">{r.count}</td>
+                              <td className="w-12 px-1 py-1 text-right text-green-600">{r.success}</td>
+                              <td className="w-12 px-2 py-1 text-right text-red-500">{r.error}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {showHealth && (
+            <div className="rounded-lg border">
+              <div className="flex items-center justify-between border-b bg-muted/20 px-2.5 py-1.5">
+                <span className="text-[11px] font-medium">{t('gatewayLogs.healthTitle')}</span>
+                {!healthUnavailable && Object.keys(health).length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleCleanupStale}
+                    className="h-6 gap-1 px-1.5 text-[10px] font-normal text-muted-foreground"
+                  >
+                    <Trash2 size={10} />
+                    {t('gatewayLogs.cleanupStale')}
+                  </Button>
+                )}
+              </div>
+              {healthUnavailable ? (
+                <p className="px-2.5 py-3 text-[11px] text-muted-foreground">{t('gatewayLogs.healthUnavailable')}</p>
+              ) : Object.keys(health).length === 0 ? (
+                <p className="px-2.5 py-3 text-[11px] text-muted-foreground">{t('gatewayLogs.noData')}</p>
+              ) : (
+                <div className="max-h-52 overflow-auto">
+                  <table className="w-full text-[11px]">
+                    <thead className="sticky top-0 bg-muted/95 backdrop-blur">
+                      <tr className="border-b">
+                        <th className="px-2.5 py-1.5 text-left font-sans font-medium">{t('gatewayLogs.colAccount')}</th>
+                        <th className="w-14 px-1 py-1.5 text-right font-sans font-medium">{t('gatewayLogs.colHealthScore')}</th>
+                        <th className="w-12 px-1 py-1.5 text-right font-sans font-medium">{t('gatewayLogs.colSuccess')}</th>
+                        <th className="w-12 px-1 py-1.5 text-right font-sans font-medium">{t('gatewayLogs.colFailure')}</th>
+                        <th className="w-14 px-1 py-1.5 text-right font-sans font-medium">{t('gatewayLogs.colConns')}</th>
+                        <th className="w-16 px-1 py-1.5 text-right font-sans font-medium">{t('gatewayLogs.colAvgMs')}</th>
+                        <th className="w-14 px-2 py-1.5" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.values(health).map(h => (
+                        <tr key={h.accountId} className="border-b border-border/40 last:border-0">
+                          <td className="truncate px-2.5 py-1 font-mono" title={h.accountId}>{h.accountId}</td>
+                          <td className={cn('px-1 py-1 text-right font-semibold', h.healthScore >= 80 ? 'text-green-600' : h.healthScore >= 50 ? 'text-amber-500' : 'text-red-500')}>
+                            {h.healthScore}
+                          </td>
+                          <td className="px-1 py-1 text-right text-green-600">{h.recentSuccesses}</td>
+                          <td className="px-1 py-1 text-right text-red-500">{h.recentFailures}</td>
+                          <td className="px-1 py-1 text-right">{h.activeConnections}</td>
+                          <td className="px-1 py-1 text-right">{h.avgResponseTimeMs}</td>
+                          <td className="px-2 py-1 text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleResetHealth(h.accountId)}
+                              className="h-5 px-1.5 text-[10px] font-normal text-muted-foreground"
+                            >
+                              {t('gatewayLogs.resetHealth')}
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* 日志表格区域 */}
           <div className="border rounded-lg flex-1 min-h-0 flex flex-col">
