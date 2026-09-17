@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import {
   clearAllCache,
   clearGatewayRequestLogs,
+  clearRateLimitAccount,
   cleanupExpiredCache,
   cleanupStaleHealth,
   getAllAccountHealth,
@@ -10,6 +11,7 @@ import {
   getGatewayModelStats,
   getGatewayRequestLogs,
   getGatewayRequestStats,
+  getRateLimitedAccounts,
   openGatewayLogDir,
   resetAccountHealth
 } from '../../../api/gatewayApi'
@@ -152,6 +154,8 @@ export function RequestLogsDialog({
   const [endpointStats, setEndpointStats] = useState<EndpointStat[]>([])
   const [health, setHealth] = useState<Record<string, AccountHealth>>({})
   const [healthUnavailable, setHealthUnavailable] = useState(false)
+  // 被限流的账号 ID 集合：健康度表里标红并给「解除」入口
+  const [rateLimited, setRateLimited] = useState<Set<string>>(new Set())
   const [showBreakdown, setShowBreakdown] = useState(false)
   const [showHealth, setShowHealth] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -198,6 +202,10 @@ export function RequestLogsDialog({
       getAllAccountHealth<Record<string, AccountHealth>>()
         .then(v => { setHealth(v || {}); setHealthUnavailable(false) })
         .catch(() => { setHealth({}); setHealthUnavailable(true) })
+      // 限流列表与健康度同源，一并拉取；失败同样视为网关未运行
+      getRateLimitedAccounts()
+        .then(ids => setRateLimited(new Set(ids || [])))
+        .catch(() => setRateLimited(new Set()))
 
       setRequestLogs(logs.map(log => ({
         id: `${log.requestIndex}-${log.occurredAt}`,
@@ -255,6 +263,23 @@ export function RequestLogsDialog({
       const next = await getAllAccountHealth<Record<string, AccountHealth>>().catch(() => null)
       if (next) setHealth(next)
       toast.success(t('gatewayLogs.toastHealthReset'))
+    } catch (err) {
+      toast.error(t('gatewayLogs.toastHealthResetFailed', { error: String(err) }))
+    }
+  }
+
+  // 解除限流：让被限流的账号立即重新参与调度（无需等滑动窗口自然过期）
+  const handleClearRateLimit = async (accountId: string) => {
+    try {
+      await clearRateLimitAccount(accountId)
+      setRateLimited(prev => {
+        const next = new Set(prev)
+        next.delete(accountId)
+        return next
+      })
+      const next = await getRateLimitedAccounts().catch(() => null)
+      if (next) setRateLimited(new Set(next))
+      toast.success(t('gatewayLogs.toastRateLimitCleared'))
     } catch (err) {
       toast.error(t('gatewayLogs.toastHealthResetFailed', { error: String(err) }))
     }
@@ -593,6 +618,7 @@ export function RequestLogsDialog({
                         <th className="w-12 px-1 py-1.5 text-right font-sans font-medium">{t('gatewayLogs.colFailure')}</th>
                         <th className="w-14 px-1 py-1.5 text-right font-sans font-medium">{t('gatewayLogs.colConns')}</th>
                         <th className="w-16 px-1 py-1.5 text-right font-sans font-medium">{t('gatewayLogs.colAvgMs')}</th>
+                        <th className="w-16 px-1 py-1.5 text-center font-sans font-medium">{t('gatewayLogs.colRateLimit')}</th>
                         <th className="w-14 px-2 py-1.5" />
                       </tr>
                     </thead>
@@ -607,6 +633,17 @@ export function RequestLogsDialog({
                           <td className="px-1 py-1 text-right text-red-500">{h.recentFailures}</td>
                           <td className="px-1 py-1 text-right">{h.activeConnections}</td>
                           <td className="px-1 py-1 text-right">{h.avgResponseTimeMs}</td>
+                          <td className="px-1 py-1 text-center">
+                            {rateLimited.has(h.accountId) && (
+                              <button
+                                onClick={() => handleClearRateLimit(h.accountId)}
+                                title={t('gatewayLogs.rateLimitedHint')}
+                                className="rounded px-1.5 py-0.5 text-[10px] font-normal text-amber-600 bg-amber-500/10 hover:bg-amber-500/20 dark:text-amber-400 cursor-pointer"
+                              >
+                                {t('gatewayLogs.rateLimited')}
+                              </button>
+                            )}
+                          </td>
                           <td className="px-2 py-1 text-right">
                             <Button
                               variant="ghost"

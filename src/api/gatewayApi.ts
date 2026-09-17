@@ -86,6 +86,19 @@ export function cleanupStaleHealth() {
   return invoke('cleanup_stale_health')
 }
 
+/**
+ * 当前被限流的账号 ID 列表（负载均衡器滑动窗口内的限流标记）。
+ * 网关未启动时后端返回错误，应与 getAllAccountHealth 一样视为「未运行」。
+ */
+export function getRateLimitedAccounts() {
+  return invoke<string[]>('get_rate_limited_accounts')
+}
+
+/** 清除指定账号的限流标记，使其立即重新参与调度 */
+export function clearRateLimitAccount(accountId: string) {
+  return invoke('clear_rate_limit_account', { accountId })
+}
+
 // 获取可用模型列表
 export function getAvailableModels() {
   return invoke<string[]>('get_available_models')

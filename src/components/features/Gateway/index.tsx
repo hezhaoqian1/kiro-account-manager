@@ -37,11 +37,6 @@ interface ClientConfigResult {
   error?: string
 }
 import {
-  GatewayConfigProvider,
-  GatewayStatusProvider,
-  GatewayDataProvider
-} from './contexts'
-import {
   applyGatewayLocalOnlyChange,
   buildGatewayActionSummary,
   buildGatewayBaseUrl,
@@ -288,7 +283,6 @@ function GatewayPage() {
   }, [])
 
   useGatewayPolling({
-    activeTab: 'config',
     fallbackConfig: pollingFallbackConfig,
     onStatus: handleStatusPoll
   })
@@ -483,222 +477,216 @@ function GatewayPage() {
   }
 
   return (
-    <GatewayConfigProvider>
-      <GatewayStatusProvider>
-        <GatewayDataProvider>
-          <div className={`h-full overflow-y-auto p-6 glass-main`}>
-            <div className="mb-4 flex items-center gap-3 animate-slide-in-left">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/80 to-primary flex items-center justify-center shadow-md ring-1 ring-primary/20 flex-shrink-0">
-                <Network size={20} className="text-primary-foreground" />
-              </div>
-              <div className="flex flex-col min-w-0">
-                <h1 className="text-lg font-semibold text-foreground leading-tight">{t('nav.gateway')}</h1>
-                <p className="text-sm text-muted-foreground leading-tight truncate">{t('gateway.gatewayDescription')}</p>
-              </div>
-            </div>
+      <div className={`h-full overflow-y-auto p-6 glass-main`}>
+        <div className="mb-4 flex items-center gap-3 animate-slide-in-left">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/80 to-primary flex items-center justify-center shadow-md ring-1 ring-primary/20 flex-shrink-0">
+            <Network size={20} className="text-primary-foreground" />
+          </div>
+          <div className="flex flex-col min-w-0">
+            <h1 className="text-lg font-semibold text-foreground leading-tight">{t('nav.gateway')}</h1>
+            <p className="text-sm text-muted-foreground leading-tight truncate">{t('gateway.gatewayDescription')}</p>
+          </div>
+        </div>
+        <Stack gap="sm">
+          <Card className={`glass-card border border-border rounded-xl p-3`}>
             <Stack gap="sm">
-              <Card className={`glass-card border border-border rounded-xl p-3`}>
-                <Stack gap="sm">
-                  <Group justify="space-between" align="center">
-                    <Group gap="xs">
-                      <Text fw={700} className="text-foreground text-base">{t('gateway.kiroApiReverseProxy')}</Text>
-                      {!status.running ? (
+              <Group justify="space-between" align="center">
+                <Group gap="xs">
+                  <Text fw={700} className="text-foreground text-base">{t('gateway.kiroApiReverseProxy')}</Text>
+                  {!status.running ? (
+                    <Button
+                      size="sm"
+                      onClick={handleStart}
+                      disabled={hasFieldErrors || saving || loading}
+                      className="bg-green-500 hover:bg-green-600 text-white h-7 px-2.5 text-xs"
+                    >
+                      <Play size={12} className="mr-1" />
+                      {t('gateway.start')}
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      onClick={handleStop}
+                      disabled={saving || loading}
+                      className="bg-red-500 hover:bg-red-600 text-white h-7 px-2.5 text-xs"
+                    >
+                      <Square size={12} className="mr-1" />
+                      {t('gateway.stop')}
+                    </Button>
+                  )}
+                  <Badge color={status.running ? 'green' : 'gray'}>{status.running ? t('gateway.running') : t('gateway.stopped')}</Badge>
+                </Group>
+                <Group gap="xs">
+                  <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs" onClick={() => setShowRequestLogs(true)} disabled={!status.running}>
+                    <ScrollText size={12} className="mr-1" />
+                    {t('gateway.requestLogs')}
+                  </Button>
+                  <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs" onClick={() => setShowRouteTest(true)}>
+                    <Network size={12} className="mr-1" />
+                    {t('gateway.routeAllocationTest')}
+                  </Button>
+                  <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs" onClick={() => setShowApiPlayground(true)} disabled={!status.running}>
+                    <TestTube2 size={12} className="mr-1" />
+                    {t('gateway.apiPlayground')}
+                  </Button>
+                </Group>
+              </Group>
+
+              <div className="grid grid-cols-3 gap-2">
+                {consoleHighlights.map((item) => (
+                  <div key={item.id} className="border rounded-lg p-2 group relative">
+                    <Text size="xs" className={"text-muted-foreground"}>{item.label}</Text>
+                    <div className="flex items-center gap-2">
+                      <Text fw={700} className={"text-foreground text-sm flex-1 truncate"}>{item.value}</Text>
+                      {(item.id === 'current-entry' || item.id === 'client-key') && (
                         <Button
                           size="sm"
-                          onClick={handleStart}
-                          disabled={hasFieldErrors || saving || loading}
-                          className="bg-green-500 hover:bg-green-600 text-white h-7 px-2.5 text-xs"
+                          variant="ghost"
+                          className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => {
+                            const text = item.id === 'current-entry'
+                              ? effectiveBaseUrl
+                              : (effectiveConfig.clientApiKeysText || effectiveConfig.apiKey || '').split('\n')[0]?.trim()
+                            copyText(text, t('gateway.copiedItem', { label: item.label }))
+                          }}
                         >
-                          <Play size={12} className="mr-1" />
-                          {t('gateway.start')}
-                        </Button>
-                      ) : (
-                        <Button
-                          size="sm"
-                          onClick={handleStop}
-                          disabled={saving || loading}
-                          className="bg-red-500 hover:bg-red-600 text-white h-7 px-2.5 text-xs"
-                        >
-                          <Square size={12} className="mr-1" />
-                          {t('gateway.stop')}
+                          <Copy size={12} className="text-muted-foreground" />
                         </Button>
                       )}
-                      <Badge color={status.running ? 'green' : 'gray'}>{status.running ? t('gateway.running') : t('gateway.stopped')}</Badge>
-                    </Group>
-                    <Group gap="xs">
-                      <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs" onClick={() => setShowRequestLogs(true)} disabled={!status.running}>
-                        <ScrollText size={12} className="mr-1" />
-                        {t('gateway.requestLogs')}
-                      </Button>
-                      <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs" onClick={() => setShowRouteTest(true)}>
-                        <Network size={12} className="mr-1" />
-                        {t('gateway.routeAllocationTest')}
-                      </Button>
-                      <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs" onClick={() => setShowApiPlayground(true)} disabled={!status.running}>
-                        <TestTube2 size={12} className="mr-1" />
-                        {t('gateway.apiPlayground')}
-                      </Button>
-                    </Group>
-                  </Group>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Stack>
+          </Card>
 
-                  <div className="grid grid-cols-3 gap-2">
-                    {consoleHighlights.map((item) => (
-                      <div key={item.id} className="border rounded-lg p-2 group relative">
-                        <Text size="xs" className={"text-muted-foreground"}>{item.label}</Text>
-                        <div className="flex items-center gap-2">
-                          <Text fw={700} className={"text-foreground text-sm flex-1 truncate"}>{item.value}</Text>
-                          {(item.id === 'current-entry' || item.id === 'client-key') && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                              onClick={() => {
-                                const text = item.id === 'current-entry'
-                                  ? effectiveBaseUrl
-                                  : (effectiveConfig.clientApiKeysText || effectiveConfig.apiKey || '').split('\n')[0]?.trim()
-                                copyText(text, t('gateway.copiedItem', { label: item.label }))
-                              }}
-                            >
-                              <Copy size={12} className="text-muted-foreground" />
-                            </Button>
-                          )}
-                        </div>
+          <GatewayConfigComponent
+            config={config}
+            fieldErrors={fieldErrors}
+            setField={setField}
+            accountOptions={accountOptions}
+            groupOptions={groupOptions}
+            setConfig={setConfig}
+            applyGatewayLocalOnlyChange={applyGatewayLocalOnlyChange}
+            createGeneratedApiKey={createGeneratedApiKey}
+            handleSaveConfig={handleSilentSave}
+            handleAutoStartToggle={handleAutoStartToggle}
+            onShowClientConfig={() => setShowClientConfig(true)}
+            hasConfiguredClients={hasConfiguredClients}
+          />
+
+          <RequestLogsDialog open={showRequestLogs} onOpenChange={setShowRequestLogs} logLevel={config.logLevel} onLogLevelChange={(v) => setField('logLevel', v)} logRequests={config.logRequests} onLogRequestsChange={(v) => setField('logRequests', v)} onSave={handleSilentSave} />
+
+          {/* 快速配置客户端弹窗 */}
+          <DialogRoot open={showClientConfig} onOpenChange={setShowClientConfig}>
+            <DialogContent maxWidth="560px">
+              <DialogHeader className="">
+                <DialogTitle className="">{t('gateway.quickClientConfig')}</DialogTitle>
+                <DialogDescription className="">
+                  {t('gateway.quickClientConfigDesc')}
+                </DialogDescription>
+              </DialogHeader>
+
+              <DialogBody className="flex flex-col gap-4 pt-2">
+                {/* 客户端选择 */}
+                <div className="flex gap-3">
+                  {[
+                    { id: 'claudeCode', label: 'Claude Code CLI', desc: '~/.claude/settings.json' },
+                    { id: 'codex', label: 'Codex CLI', desc: '~/.codex/auth.json + config.toml' },
+                  ].map(client => (
+                    <div
+                      key={client.id}
+                      onClick={() => setSelectedClients(prev =>
+                        prev.includes(client.id) ? prev.filter(c => c !== client.id) : [...prev, client.id]
+                      )}
+                      className={`flex-1 p-3 rounded-xl border cursor-pointer transition-all ${selectedClients.includes(client.id)
+                          ? 'border-primary bg-primary/5 shadow-sm'
+                          : 'border-border bg-muted/20 hover:bg-muted/40'
+                        }`}
+                    >
+                      <Text size="sm" fw={600} className="text-foreground">{client.label}</Text>
+                      <Text size="xs" className="text-muted-foreground font-mono mt-1">{client.desc}</Text>
+                    </div>
+                  ))}
+                </div>
+
+                {/* 配置预览 */}
+                <div className="bg-muted/30 border border-border rounded-xl p-3">
+                  <Text size="xs" className="text-muted-foreground mb-2">{t('gateway.configToWrite')}</Text>
+                  <div className="flex flex-col gap-2 font-mono text-[11px]">
+                    {selectedClients.includes('claudeCode') && (
+                      <div className="flex flex-col gap-0.5 p-2 rounded-lg bg-muted/30">
+                        <span className="text-muted-foreground text-[10px] font-sans">Claude Code → ~/.claude/settings.json</span>
+                        <span className="text-foreground">ANTHROPIC_BASE_URL = {effectiveBaseUrl}</span>
+                        <span className="text-foreground">ANTHROPIC_API_KEY = {(effectiveConfig.clientApiKeysText || effectiveConfig.apiKey || '').split('\n')[0]?.substring(0, 12)}***</span>
+                      </div>
+                    )}
+                    {selectedClients.includes('codex') && (
+                      <div className="flex flex-col gap-0.5 p-2 rounded-lg bg-muted/30">
+                        <span className="text-muted-foreground text-[10px] font-sans">Codex → ~/.codex/config.toml + auth.json</span>
+                        <span className="text-foreground">base_url = "{effectiveBaseUrl}/v1"</span>
+                        <span className="text-foreground">OPENAI_API_KEY = {(effectiveConfig.clientApiKeysText || effectiveConfig.apiKey || '').split('\n')[0]?.substring(0, 12)}***</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 执行按钮 */}
+                <Button
+                  onClick={handleConfigureClients}
+                  disabled={selectedClients.length === 0 || clientConfigLoading}
+                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
+                >
+                  <Zap size={16} className="mr-1" />
+                  {clientConfigLoading ? t('gateway.configuring') : t('gateway.oneClickConfigClients', { count: selectedClients.length })}
+                </Button>
+
+                {/* 结果展示 */}
+                {clientConfigResults.length > 0 && (
+                  <div className="flex flex-col gap-2">
+                    {clientConfigResults.map((result: any, idx: number) => (
+                      <div key={idx} className={`p-3 rounded-lg border ${result.success ? 'border-green-500/30 bg-green-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
+                        <Text size="sm" fw={600} className={result.success ? 'text-green-600' : 'text-red-500'}>
+                          {result.success ? '✓' : '✗'} {result.client}
+                        </Text>
+                        {result.success && result.paths?.length > 0 && (
+                          <Text size="xs" className="text-muted-foreground font-mono mt-1">
+                            {result.paths.join(', ')}
+                          </Text>
+                        )}
+                        {result.error && (
+                          <Text size="xs" className="text-red-500 mt-1">{result.error}</Text>
+                        )}
                       </div>
                     ))}
                   </div>
-                </Stack>
-              </Card>
+                )}
+              </DialogBody>
+            </DialogContent>
+          </DialogRoot>
 
-              <GatewayConfigComponent
-                config={config}
-                fieldErrors={fieldErrors}
-                setField={setField}
-                accountOptions={accountOptions}
-                groupOptions={groupOptions}
-                setConfig={setConfig}
-                applyGatewayLocalOnlyChange={applyGatewayLocalOnlyChange}
-                createGeneratedApiKey={createGeneratedApiKey}
-                handleSaveConfig={handleSilentSave}
-                handleAutoStartToggle={handleAutoStartToggle}
-                onShowClientConfig={() => setShowClientConfig(true)}
-                hasConfiguredClients={hasConfiguredClients}
-              />
+          <RouteTestDialog
+            open={showRouteTest}
+            onOpenChange={setShowRouteTest}
+            config={effectiveConfig}
+          />
 
-              <RequestLogsDialog open={showRequestLogs} onOpenChange={setShowRequestLogs} logLevel={config.logLevel} onLogLevelChange={(v) => setField('logLevel', v)} logRequests={config.logRequests} onLogRequestsChange={(v) => setField('logRequests', v)} onSave={handleSilentSave} />
-
-              {/* 快速配置客户端弹窗 */}
-              <DialogRoot open={showClientConfig} onOpenChange={setShowClientConfig}>
-                <DialogContent maxWidth="560px">
-                  <DialogHeader className="">
-                    <DialogTitle className="">{t('gateway.quickClientConfig')}</DialogTitle>
-                    <DialogDescription className="">
-                      {t('gateway.quickClientConfigDesc')}
-                    </DialogDescription>
-                  </DialogHeader>
-
-                  <DialogBody className="flex flex-col gap-4 pt-2">
-                    {/* 客户端选择 */}
-                    <div className="flex gap-3">
-                      {[
-                        { id: 'claudeCode', label: 'Claude Code CLI', desc: '~/.claude/settings.json' },
-                        { id: 'codex', label: 'Codex CLI', desc: '~/.codex/auth.json + config.toml' },
-                      ].map(client => (
-                        <div
-                          key={client.id}
-                          onClick={() => setSelectedClients(prev =>
-                            prev.includes(client.id) ? prev.filter(c => c !== client.id) : [...prev, client.id]
-                          )}
-                          className={`flex-1 p-3 rounded-xl border cursor-pointer transition-all ${selectedClients.includes(client.id)
-                              ? 'border-primary bg-primary/5 shadow-sm'
-                              : 'border-border bg-muted/20 hover:bg-muted/40'
-                            }`}
-                        >
-                          <Text size="sm" fw={600} className="text-foreground">{client.label}</Text>
-                          <Text size="xs" className="text-muted-foreground font-mono mt-1">{client.desc}</Text>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* 配置预览 */}
-                    <div className="bg-muted/30 border border-border rounded-xl p-3">
-                      <Text size="xs" className="text-muted-foreground mb-2">{t('gateway.configToWrite')}</Text>
-                      <div className="flex flex-col gap-2 font-mono text-[11px]">
-                        {selectedClients.includes('claudeCode') && (
-                          <div className="flex flex-col gap-0.5 p-2 rounded-lg bg-muted/30">
-                            <span className="text-muted-foreground text-[10px] font-sans">Claude Code → ~/.claude/settings.json</span>
-                            <span className="text-foreground">ANTHROPIC_BASE_URL = {effectiveBaseUrl}</span>
-                            <span className="text-foreground">ANTHROPIC_API_KEY = {(effectiveConfig.clientApiKeysText || effectiveConfig.apiKey || '').split('\n')[0]?.substring(0, 12)}***</span>
-                          </div>
-                        )}
-                        {selectedClients.includes('codex') && (
-                          <div className="flex flex-col gap-0.5 p-2 rounded-lg bg-muted/30">
-                            <span className="text-muted-foreground text-[10px] font-sans">Codex → ~/.codex/config.toml + auth.json</span>
-                            <span className="text-foreground">base_url = "{effectiveBaseUrl}/v1"</span>
-                            <span className="text-foreground">OPENAI_API_KEY = {(effectiveConfig.clientApiKeysText || effectiveConfig.apiKey || '').split('\n')[0]?.substring(0, 12)}***</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* 执行按钮 */}
-                    <Button
-                      onClick={handleConfigureClients}
-                      disabled={selectedClients.length === 0 || clientConfigLoading}
-                      className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
-                    >
-                      <Zap size={16} className="mr-1" />
-                      {clientConfigLoading ? t('gateway.configuring') : t('gateway.oneClickConfigClients', { count: selectedClients.length })}
-                    </Button>
-
-                    {/* 结果展示 */}
-                    {clientConfigResults.length > 0 && (
-                      <div className="flex flex-col gap-2">
-                        {clientConfigResults.map((result: any, idx: number) => (
-                          <div key={idx} className={`p-3 rounded-lg border ${result.success ? 'border-green-500/30 bg-green-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
-                            <Text size="sm" fw={600} className={result.success ? 'text-green-600' : 'text-red-500'}>
-                              {result.success ? '✓' : '✗'} {result.client}
-                            </Text>
-                            {result.success && result.paths?.length > 0 && (
-                              <Text size="xs" className="text-muted-foreground font-mono mt-1">
-                                {result.paths.join(', ')}
-                              </Text>
-                            )}
-                            {result.error && (
-                              <Text size="xs" className="text-red-500 mt-1">{result.error}</Text>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </DialogBody>
-                </DialogContent>
-              </DialogRoot>
-
-              <RouteTestDialog
-                open={showRouteTest}
-                onOpenChange={setShowRouteTest}
-                config={effectiveConfig}
-              />
-
-              {/* API Playground */}
-              <ApiPlaygroundDialog
-                open={showApiPlayground}
-                onOpenChange={setShowApiPlayground}
-                accounts={accounts}
-                gatewayBaseUrl={effectiveBaseUrl}
-                gatewayApiKey={(effectiveConfig.clientApiKeysText || effectiveConfig.apiKey || '').split('\n')[0]?.trim() || ''}
-                routing={{
-                  accountMode: effectiveConfig.accountMode,
-                  accountId: effectiveConfig.accountId,
-                  groupId: effectiveConfig.groupId,
-                  poolAccountIds: effectiveConfig.poolAccountIds,
-                }}
-              />
-            </Stack>
-          </div>
-        </GatewayDataProvider>
-      </GatewayStatusProvider>
-    </GatewayConfigProvider>
+          {/* API Playground */}
+          <ApiPlaygroundDialog
+            open={showApiPlayground}
+            onOpenChange={setShowApiPlayground}
+            accounts={accounts}
+            gatewayBaseUrl={effectiveBaseUrl}
+            gatewayApiKey={(effectiveConfig.clientApiKeysText || effectiveConfig.apiKey || '').split('\n')[0]?.trim() || ''}
+            routing={{
+              accountMode: effectiveConfig.accountMode,
+              accountId: effectiveConfig.accountId,
+              groupId: effectiveConfig.groupId,
+              poolAccountIds: effectiveConfig.poolAccountIds,
+            }}
+          />
+        </Stack>
+      </div>
   )
 }
 
