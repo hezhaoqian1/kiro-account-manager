@@ -80,7 +80,7 @@ use commands::gateway_cmd::{
 };
 //缓存管理
 use commands::cache_cmd::{
-    cleanup_expired_cache, clear_all_cache, clear_session_cache, get_cache_config, get_cache_stats,
+    cleanup_expired_cache, clear_all_cache, clear_session_cache, get_cache_stats,
 };
 //分组
 use commands::group_tag_cmd::{
@@ -605,7 +605,6 @@ fn main() {
             test_route_config,
             get_available_models,
             // 缓存管理命令
-            get_cache_config,
             get_cache_stats,
             clear_all_cache,
             clear_session_cache,
