@@ -91,6 +91,12 @@ function GatewayConfig({
   }
 
   const selectedPoolAccountIds = Array.isArray(config.poolAccountIds) ? config.poolAccountIds : []
+  // 配置里的 id 可能指向已删除的账号。分母是「现存可选账号」，故分子也只该数
+  // 真正能解析到账号的 id，否则会出现「已选 23 / 共 0」这种分母小于分子的昏话。
+  const availablePoolIdSet = new Set(accountOptions.map((o: any) => o.value))
+  const effectiveSelectedPoolIds = selectedPoolAccountIds.filter((id: string) =>
+    availablePoolIdSet.has(id)
+  )
   const selectedPoolAccounts = accountOptions.filter((account: any) => selectedPoolAccountIds.includes(account.value))
   const effectiveStrategy = config.strategy || 'round_robin'
 
@@ -127,7 +133,9 @@ function GatewayConfig({
   }
 
   const toggleAllPoolAccounts = () => {
-    if (selectedPoolAccountIds.length === accountOptions.length) {
+    // 用「现存账号是否都已在池中」判定，而非直接比较长度：
+    // 池里可能残留已删除账号的 id，长度相等不代表选满
+    if (accountOptions.length > 0 && effectiveSelectedPoolIds.length === accountOptions.length) {
       setField('poolAccountIds', [])
     } else {
       setField('poolAccountIds', accountOptions.map((account: any) => account.value))
@@ -238,8 +246,8 @@ function GatewayConfig({
                       onClick={() => setShowAccountPoolDialog(true)}
                     >
                       <Users size={16} className="mr-2" />
-                      {config.poolAccountIds?.length > 0
-                        ? `${t('gateway.selected')} ${config.poolAccountIds.length} ${t('gateway.accounts')} · ${getStrategyLabel(effectiveStrategy)}`
+                      {effectiveSelectedPoolIds.length > 0
+                        ? `${t('gateway.selected')} ${effectiveSelectedPoolIds.length} ${t('gateway.accounts')} · ${getStrategyLabel(effectiveStrategy)}`
                         : t('gateway.configureAccountPool')}
                     </Button>
                   </div>
@@ -457,7 +465,7 @@ function GatewayConfig({
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div className="rounded-xl border border-border bg-muted/20 p-3">
                 <div className="text-xs text-muted-foreground">{t('gateway.selectedAccounts')}</div>
-                <div className="mt-1 text-2xl font-semibold text-foreground">{selectedPoolAccountIds.length}<span className="text-sm text-muted-foreground font-normal ml-1">/ {accountOptions.length}</span></div>
+                <div className="mt-1 text-2xl font-semibold text-foreground">{effectiveSelectedPoolIds.length}<span className="text-sm text-muted-foreground font-normal ml-1">/ {accountOptions.length}</span></div>
               </div>
               <div className="rounded-xl border border-border bg-muted/20 p-3">
                 <div className="flex items-center justify-between gap-2">
@@ -502,7 +510,7 @@ function GatewayConfig({
                 </SelectContent>
               </Select>
               <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={toggleAllPoolAccounts} disabled={accountOptions.length === 0}>
-                {selectedPoolAccountIds.length === accountOptions.length && accountOptions.length > 0 ? t('gateway.deselectAll') : t('gateway.selectAll')}
+                {effectiveSelectedPoolIds.length === accountOptions.length && accountOptions.length > 0 ? t('gateway.deselectAll') : t('gateway.selectAll')}
               </Button>
               <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => {
                 const activeIds = accountOptions
