@@ -419,7 +419,7 @@ function CreateHookModal({ onCreate, onClose, colors, t, accent, accentGradientB
           </div>
 
           <div>
-            <label className={`block text-xs font-medium text-muted-foreground mb-1.5`}>{t('hooks.scope') || '作用范围'}</label>
+            <label className={`block text-xs font-medium text-muted-foreground mb-1.5`}>{t('hooks.scope')}</label>
             <div className="flex gap-2">
               <button
                 type="button"
@@ -427,20 +427,20 @@ function CreateHookModal({ onCreate, onClose, colors, t, accent, accentGradientB
                 disabled={!hasProjectDir}
                 className={`flex-1 px-3 py-2 text-sm rounded-lg border transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${scope === 'project' ? 'border-primary bg-primary/10 text-foreground' : 'border-input text-muted-foreground hover:bg-muted/50'}`}
               >
-                {t('hooks.scopeProject') || '项目级'}
+                {t('hooks.scopeProject')}
               </button>
               <button
                 type="button"
                 onClick={() => setScope('user')}
                 className={`flex-1 px-3 py-2 text-sm rounded-lg border transition-colors cursor-pointer ${scope === 'user' ? 'border-primary bg-primary/10 text-foreground' : 'border-input text-muted-foreground hover:bg-muted/50'}`}
               >
-                {t('hooks.scopeUser') || '用户级'}
+                {t('hooks.scopeUser')}
               </button>
             </div>
             <p className={`text-xs text-muted-foreground mt-1`}>
               {scope === 'user'
-                ? t('hooks.scopeUserHint') || '写入 ~/.kiro/hooks（Kiro IDE 1.0.182+），对所有项目生效'
-                : t('hooks.scopeProjectHint') || '写入当前项目的 .kiro/hooks'}
+                ? t('hooks.scopeUserHint')
+                : t('hooks.scopeProjectHint')}
             </p>
           </div>
 
