@@ -609,6 +609,7 @@
   "kiroConfig.agentsMdNoProject": "Сначала выберите каталог проекта — вложенные AGENTS.md сканируются только внутри рабочей области",
   "kiroConfig.agentsMdEmpty": "В этом проекте не найдено ни одного AGENTS.md",
   "kiroConfig.agentsMdRoot": "Корень проекта",
+  "kiroConfig.agentsMdIgnoreActive": "При сканировании применены следующие правила исключения (число правил):",
   "kiroConfig.agentsMdPlaceholder": "Введите инструкции для этого поддерева каталогов (Markdown)…",
   "kiroConfig.loading": "Загрузка…",
   "kiroConfig.save": "Сохранить",

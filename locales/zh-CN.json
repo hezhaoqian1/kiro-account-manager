@@ -583,6 +583,7 @@
   "kiroConfig.agentsMdNoProject": "请先选择项目目录 —— 嵌套 AGENTS.md 只在工作区内扫描",
   "kiroConfig.agentsMdEmpty": "该项目内没有找到 AGENTS.md",
   "kiroConfig.agentsMdRoot": "项目根",
+  "kiroConfig.agentsMdIgnoreActive": "扫描已应用以下忽略规则（规则数）：",
   "kiroConfig.agentsMdPlaceholder": "在此填写针对该目录树的指令（Markdown）…",
   "kiroConfig.specs": "Specs",
   "kiroConfig.specEmpty": "还没有任何 spec",

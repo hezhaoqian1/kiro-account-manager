@@ -1,7 +1,7 @@
 // Steering 管理命令
 
 use crate::commands::common::run_blocking_task;
-use crate::kiro::settings::steering::{AgentsMdFile, SteeringFile, SteeringManager};
+use crate::kiro::settings::steering::{AgentsMdFile, IgnoreFileInfo, SteeringFile, SteeringManager};
 use tauri::command;
 
 #[command]
@@ -99,6 +99,17 @@ pub async fn refine_steering_file(
 #[command]
 pub async fn scan_agents_md(project_dir: String) -> Result<Vec<AgentsMdFile>, String> {
     run_blocking_task(move || SteeringManager::scan_agents_md(&project_dir)).await
+}
+
+/// 列出项目内影响 `AGENTS.md` 扫描的忽略文件（`.kiroignore` / `.gitignore`）。
+///
+/// 面板据此提示「哪些文件影响了本次扫描结果」—— IDE 的忽略链还含 `fs_read` 权限，
+/// 那层管理端拿不到，这里只能列出文件侧的两层。
+#[command]
+pub async fn list_agents_md_ignore_files(
+    project_dir: String,
+) -> Result<Vec<IgnoreFileInfo>, String> {
+    run_blocking_task(move || SteeringManager::list_ignore_files(&project_dir)).await
 }
 
 /// 读取指定 `AGENTS.md`（rel_path 相对项目根，如 `src/api/AGENTS.md`）。

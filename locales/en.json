@@ -608,6 +608,7 @@
   "kiroConfig.agentsMdNoProject": "Select a project directory first — nested AGENTS.md is scanned only within the workspace",
   "kiroConfig.agentsMdEmpty": "No AGENTS.md found in this project",
   "kiroConfig.agentsMdRoot": "Project root",
+  "kiroConfig.agentsMdIgnoreActive": "Scan applied these ignore rules (rule count):",
   "kiroConfig.agentsMdPlaceholder": "Enter instructions for this directory subtree (Markdown)…",
   "kiroConfig.loading": "Loading…",
   "kiroConfig.save": "Save",

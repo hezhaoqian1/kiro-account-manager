@@ -158,8 +158,19 @@ export interface AgentsMdFile {
   scope: string
 }
 
+// 影响 AGENTS.md 扫描的忽略文件（.kiroignore / .gitignore）
+export interface IgnoreFileInfo {
+  relPath: string // 相对项目根，如 ".kiroignore" / "src/.gitignore"
+  ruleCount: number // 有效规则条数（不含空行与注释）
+}
+
 export function scanAgentsMd<T = AgentsMdFile[]>(projectDir: string) {
   return invoke<T>('scan_agents_md', { projectDir })
+}
+
+// 列出影响 AGENTS.md 扫描的忽略文件（.kiroignore / .gitignore）
+export function listAgentsMdIgnoreFiles(projectDir: string) {
+  return invoke<IgnoreFileInfo[]>('list_agents_md_ignore_files', { projectDir })
 }
 
 export function getAgentsMd(projectDir: string, relPath: string) {

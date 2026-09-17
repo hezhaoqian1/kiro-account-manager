@@ -536,6 +536,11 @@ impl IgnoreRules {
         }
     }
 
+    /// 有效规则条数（空行与注释已在解析时丢弃）
+    fn rule_count(&self) -> usize {
+        self.patterns.len()
+    }
+
     /// 判断相对路径（正斜杠）是否被忽略。
     ///
     /// 后写的规则优先（与 gitignore 一致），故逆序扫描并取第一个命中。
@@ -610,6 +615,74 @@ fn seg_matches(pattern: &str, seg: &str) -> bool {
         }
     }
     dp[p.len()][s.len()]
+}
+
+/// 一个忽略规则文件在项目中的存在情况，供面板提示「哪些文件影响了本次扫描」。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IgnoreFileInfo {
+    /// 相对项目根的路径（正斜杠），根目录下即 `.kiroignore`
+    pub rel_path: String,
+    /// 规则条数（不含空行与注释），用于判断文件是否为空
+    pub rule_count: usize,
+}
+
+impl SteeringManager {
+    /// 列出项目内所有**实际参与** `AGENTS.md` 扫描的忽略文件。
+    ///
+    /// 只返回存在且含有效规则的条目：空文件或只有注释的忽略文件不影响扫描，
+    /// 列出来反而让用户误以为它生效了。
+    pub fn list_ignore_files(project_dir: &str) -> Result<Vec<IgnoreFileInfo>, String> {
+        let root = PathBuf::from(project_dir);
+        if !root.is_dir() {
+            return Err(format!("项目目录不存在: {project_dir}"));
+        }
+        let mut out = Vec::new();
+        Self::walk_ignore_files(&root, &root, 0, &mut out);
+        out.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));
+        Ok(out)
+    }
+
+    fn walk_ignore_files(root: &Path, dir: &Path, depth: usize, out: &mut Vec<IgnoreFileInfo>) {
+        if depth > MAX_DEPTH {
+            return;
+        }
+        for name in DEFAULT_IGNORE_FILES {
+            let path = dir.join(name);
+            if let Ok(text) = fs::read_to_string(&path) {
+                let mut rules = IgnoreRules::default();
+                rules.extend_from(&text);
+                if rules.rule_count() > 0 {
+                    let rel = path
+                        .strip_prefix(root)
+                        .unwrap_or(Path::new(name))
+                        .to_string_lossy()
+                        .replace('\\', "/");
+                    out.push(IgnoreFileInfo {
+                        rel_path: rel,
+                        rule_count: rules.rule_count(),
+                    });
+                }
+            }
+        }
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            if SKIP_DIRS.iter().any(|d| name.eq_ignore_ascii_case(d)) {
+                continue;
+            }
+            Self::walk_ignore_files(root, &path, depth + 1, out);
+        }
+    }
 }
 
 impl SteeringManager {

@@ -141,6 +141,7 @@ use commands::steering_cmd::{
     create_default_steering_file, create_initial_project_steering, create_steering_file,
     delete_steering_file, get_agents_md, get_steering_file, get_steering_files,
     refine_steering_file, save_agents_md, save_steering_file, scan_agents_md,
+    list_agents_md_ignore_files,
 };
 use commands::specs_cmd::{
     create_spec, delete_spec, list_specs, read_spec, save_spec_file,
@@ -623,6 +624,7 @@ fn main() {
             create_initial_project_steering,
             refine_steering_file,
             scan_agents_md,
+            list_agents_md_ignore_files,
             get_agents_md,
             save_agents_md,
             // Specs 管理命令
