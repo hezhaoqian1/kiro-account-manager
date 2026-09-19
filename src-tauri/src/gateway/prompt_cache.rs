@@ -2,8 +2,8 @@
 //! 在2API侧追踪 cache_control 断点，模拟 Anthropic 的 prompt caching 行为
 //! 让 Claude Code 的 cache_control 字段产生实际效果的 usage 统计
 
-use sha2::{Digest, Sha256};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -308,9 +308,14 @@ impl PromptCacheTracker {
             }
         }
 
-        // Messages（只有显式标记 cache_control 的才可缓存）
+        // Messages：system 自动缓存；普通消息只有显式 cache_control 才可缓存。
         for (i, msg) in messages.iter().enumerate() {
             let content = msg.get("content");
+            // Anthropic 的 system 在归一化阶段会进入 messages，而不是传给
+            // build_profile 的独立 system 参数。system prompt 是代理自己的
+            // 稳定缓存前缀，即使客户端（例如 BirdSub2Api）没有携带
+            // cache_control，也必须形成默认的 5 分钟缓存断点。
+            let is_system = msg.get("role").and_then(Value::as_str) == Some("system");
             let _is_last_msg = i == messages.len() - 1;
 
             match content {
@@ -321,7 +326,15 @@ impl PromptCacheTracker {
                     blocks.push(CacheableBlock {
                         value,
                         tokens,
-                        ttl,
+                        ttl: if ttl > Duration::ZERO || is_system {
+                            if ttl > Duration::ZERO {
+                                ttl
+                            } else {
+                                default_ttl
+                            }
+                        } else {
+                            Duration::ZERO
+                        },
                         is_message_end: true,
                     });
                 }
@@ -335,7 +348,15 @@ impl PromptCacheTracker {
                         blocks.push(CacheableBlock {
                             value,
                             tokens,
-                            ttl,
+                            ttl: if ttl > Duration::ZERO || is_system {
+                                if ttl > Duration::ZERO {
+                                    ttl
+                                } else {
+                                    default_ttl
+                                }
+                            } else {
+                                Duration::ZERO
+                            },
                             is_message_end: j == last_idx,
                         });
                     }
@@ -359,9 +380,7 @@ impl PromptCacheTracker {
         let Some(cc_type) = cc.get("type").and_then(|t| t.as_str()) else {
             return Duration::ZERO;
         };
-        if !cc_type.eq_ignore_ascii_case("ephemeral")
-            && !cc_type.eq_ignore_ascii_case("default")
-        {
+        if !cc_type.eq_ignore_ascii_case("ephemeral") && !cc_type.eq_ignore_ascii_case("default") {
             return Duration::ZERO;
         }
         // 检查 ttl 字段
@@ -381,22 +400,34 @@ impl PromptCacheTracker {
     }
 
     fn canonicalize(&self, value: &serde_json::Value) -> String {
-        // 排除 cache_control 字段后序列化
-        match value {
-            serde_json::Value::Object(map) => {
-                let mut sorted: Vec<_> = map
-                    .iter()
-                    .filter(|(k, _)| k.as_str() != "cache_control")
-                    .collect();
-                sorted.sort_by_key(|(k, _)| k.as_str());
-                let obj: serde_json::Map<String, serde_json::Value> = sorted
-                    .into_iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect();
-                serde_json::to_string(&serde_json::Value::Object(obj)).unwrap_or_default()
+        // Cache markers are routing metadata, not prompt content. Remove them
+        // recursively so a client adding/removing cache_control (or our
+        // normalized metadata.cache_point) cannot change the prefix fingerprint.
+        fn normalize(value: &serde_json::Value) -> serde_json::Value {
+            match value {
+                serde_json::Value::Object(map) => {
+                    let mut keys: Vec<_> = map.keys().map(String::as_str).collect();
+                    keys.sort_unstable();
+                    let mut normalized = serde_json::Map::new();
+                    for key in keys {
+                        if key == "cache_control" {
+                            continue;
+                        }
+                        if key == "cache_point" {
+                            continue;
+                        }
+                        normalized.insert(key.to_string(), normalize(&map[key]));
+                    }
+                    serde_json::Value::Object(normalized)
+                }
+                serde_json::Value::Array(items) => {
+                    serde_json::Value::Array(items.iter().map(normalize).collect())
+                }
+                other => other.clone(),
             }
-            _ => serde_json::to_string(value).unwrap_or_default(),
         }
+
+        serde_json::to_string(&normalize(value)).unwrap_or_default()
     }
 
     fn hash_chunk(&self, hasher: &mut Sha256, chunk: &str) {
@@ -474,5 +505,57 @@ mod tests {
         let other_account = tracker.compute("account-b", &profile);
         assert_eq!(other_account.cache_read_input_tokens, 0);
         assert!(other_account.cache_creation_input_tokens >= 1024);
+    }
+
+    #[test]
+    fn normalized_system_message_is_cached_without_client_breakpoint() {
+        let tracker = PromptCacheTracker::new();
+        let messages = vec![
+            json!({
+                "role": "system",
+                "content": "system prompt ".repeat(400),
+            }),
+            json!({
+                "role": "user",
+                "content": "first request",
+            }),
+        ];
+        let profile = tracker
+            .build_profile(None, &messages, None, 1600, "claude-sonnet-5")
+            .expect("system prompt should create a profile without cache_control");
+
+        let created = tracker.compute("account-a", &profile);
+        assert!(created.cache_creation_input_tokens >= 1024);
+        assert_eq!(created.cache_read_input_tokens, 0);
+        tracker.update("account-a", &profile);
+
+        let hit = tracker.compute("account-a", &profile);
+        assert_eq!(hit.cache_creation_input_tokens, 0);
+        assert!(hit.cache_read_input_tokens >= 1024);
+    }
+
+    #[test]
+    fn cache_markers_do_not_change_system_prefix_fingerprint() {
+        let tracker = PromptCacheTracker::new();
+        let prompt = "stable system prompt ".repeat(400);
+        let first = vec![json!({"role": "system", "content": prompt})];
+        let second = vec![json!({
+            "role": "system",
+            "content": "stable system prompt ".repeat(400),
+            "metadata": {"cache_point": {"type": "default"}},
+        })];
+
+        let first_profile = tracker
+            .build_profile(None, &first, None, 1600, "claude-sonnet-5")
+            .expect("first profile");
+        tracker.compute("account-a", &first_profile);
+        tracker.update("account-a", &first_profile);
+
+        let second_profile = tracker
+            .build_profile(None, &second, None, 1600, "claude-sonnet-5")
+            .expect("second profile");
+        let hit = tracker.compute("account-a", &second_profile);
+        assert!(hit.cache_read_input_tokens >= 1024);
+        assert_eq!(hit.cache_creation_input_tokens, 0);
     }
 }

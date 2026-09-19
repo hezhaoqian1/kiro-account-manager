@@ -141,11 +141,18 @@ pub async fn proxy_handler(
     if matches!(format, ResponseFormat::OpenAI | ResponseFormat::Responses) {
         request.model = crate::gateway::resolve_model_mapping(&state.config, &request.model);
         if request.model != original_model {
-            log::info!("[模型映射] {} → {} (OpenAI 协议)", original_model, request.model);
+            log::info!(
+                "[模型映射] {} → {} (OpenAI 协议)",
+                original_model,
+                request.model
+            );
         }
     } else {
         // Anthropic Messages 协议客户端直接传 Claude 模型名，不做映射
-        log::debug!("[模型映射] 跳过 Anthropic Messages 协议 (model={})", request.model);
+        log::debug!(
+            "[模型映射] 跳过 Anthropic Messages 协议 (model={})",
+            request.model
+        );
     }
 
     // 添加详细的请求日志（参考 Kiro-account-manager 的日志设计）
@@ -198,7 +205,8 @@ pub async fn proxy_handler(
         for msg in &mut request.messages {
             if msg.role == "system" {
                 if let Some(serde_json::Value::String(text)) = &msg.content {
-                    let filtered = crate::gateway::prompt_filter::apply_prompt_filters(&state.config, text);
+                    let filtered =
+                        crate::gateway::prompt_filter::apply_prompt_filters(&state.config, text);
                     msg.content = Some(serde_json::Value::String(filtered));
                 }
             }
@@ -283,78 +291,76 @@ pub async fn proxy_handler(
     };
 
     let preferred_account_id_ref = preferred_account_id.as_deref();
-    let upstream = match resolve_upstream_credentials(
-        &state.config,
-        &state,
-        preferred_account_id_ref,
-    )
-    .await
-    {
-        Ok(creds) => creds,
-        Err(message) => {
-            // 如果是 token refresh 429，尝试换一个账号而不是直接返回错误
-            // 指定了 x-account-id 时不换号，直接返回限流错误
-            if preferred_account_id_ref.is_none()
-                && (message.contains("429")
-                    || message.to_lowercase().contains("too many requests"))
-            {
-                log::warn!("[Gateway] Token 刷新被限流，尝试换账号: {}", sanitize_error(&message));
-                match resolve_upstream_credentials(&state.config, &state, None).await {
-                    Ok(creds) => creds,
-                    Err(retry_message) => {
-                        let sanitized = sanitize_error(&retry_message);
-                        return gateway_error_with_log(
-                            &state,
-                            format,
-                            &request_log_context,
-                            GatewayErrorDetails {
-                                status: StatusCode::TOO_MANY_REQUESTS,
-                                error_type: "rate_limit_error",
-                                message: &sanitized,
-                                response_body: None,
-                            },
-                        )
-                        .await;
+    let upstream =
+        match resolve_upstream_credentials(&state.config, &state, preferred_account_id_ref).await {
+            Ok(creds) => creds,
+            Err(message) => {
+                // 如果是 token refresh 429，尝试换一个账号而不是直接返回错误
+                // 指定了 x-account-id 时不换号，直接返回限流错误
+                if preferred_account_id_ref.is_none()
+                    && (message.contains("429")
+                        || message.to_lowercase().contains("too many requests"))
+                {
+                    log::warn!(
+                        "[Gateway] Token 刷新被限流，尝试换账号: {}",
+                        sanitize_error(&message)
+                    );
+                    match resolve_upstream_credentials(&state.config, &state, None).await {
+                        Ok(creds) => creds,
+                        Err(retry_message) => {
+                            let sanitized = sanitize_error(&retry_message);
+                            return gateway_error_with_log(
+                                &state,
+                                format,
+                                &request_log_context,
+                                GatewayErrorDetails {
+                                    status: StatusCode::TOO_MANY_REQUESTS,
+                                    error_type: "rate_limit_error",
+                                    message: &sanitized,
+                                    response_body: None,
+                                },
+                            )
+                            .await;
+                        }
                     }
-                }
-            } else {
-                // 检查是否是配额不足 / 参数错误（以 __402__ / __400__ 为前缀标记）
-                let (status, error_type, display_message) = if message.starts_with("__402__") {
-                    (
-                        StatusCode::PAYMENT_REQUIRED,
-                        "insufficient_quota",
-                        message.strip_prefix("__402__").unwrap_or(&message),
-                    )
-                } else if message.starts_with("__400__") {
-                    (
-                        StatusCode::BAD_REQUEST,
-                        "invalid_request_error",
-                        message.strip_prefix("__400__").unwrap_or(&message),
-                    )
                 } else {
-                    (
-                        StatusCode::UNAUTHORIZED,
-                        "authentication_error",
-                        message.as_str(),
-                    )
-                };
+                    // 检查是否是配额不足 / 参数错误（以 __402__ / __400__ 为前缀标记）
+                    let (status, error_type, display_message) = if message.starts_with("__402__") {
+                        (
+                            StatusCode::PAYMENT_REQUIRED,
+                            "insufficient_quota",
+                            message.strip_prefix("__402__").unwrap_or(&message),
+                        )
+                    } else if message.starts_with("__400__") {
+                        (
+                            StatusCode::BAD_REQUEST,
+                            "invalid_request_error",
+                            message.strip_prefix("__400__").unwrap_or(&message),
+                        )
+                    } else {
+                        (
+                            StatusCode::UNAUTHORIZED,
+                            "authentication_error",
+                            message.as_str(),
+                        )
+                    };
 
-                let sanitized = sanitize_error(display_message);
-                return gateway_error_with_log(
-                    &state,
-                    format,
-                    &request_log_context,
-                    GatewayErrorDetails {
-                        status,
-                        error_type,
-                        message: &sanitized,
-                        response_body: None,
-                    },
-                )
-                .await;
+                    let sanitized = sanitize_error(display_message);
+                    return gateway_error_with_log(
+                        &state,
+                        format,
+                        &request_log_context,
+                        GatewayErrorDetails {
+                            status,
+                            error_type,
+                            message: &sanitized,
+                            response_body: None,
+                        },
+                    )
+                    .await;
+                }
             }
-        }
-    };
+        };
     let response_id = format!("resp_{}", short_uuid());
     let message_id = format!("msg_{}", short_uuid());
     let created_at = chrono::Utc::now().timestamp();
@@ -574,7 +580,10 @@ pub async fn proxy_handler(
 
             // 如果有可重试错误（429/402/401），等待后重试
             if let Some((status, _, _, _)) = &last_retriable_error {
-                if *status == StatusCode::TOO_MANY_REQUESTS || *status == StatusCode::PAYMENT_REQUIRED || *status == StatusCode::UNAUTHORIZED {
+                if *status == StatusCode::TOO_MANY_REQUESTS
+                    || *status == StatusCode::PAYMENT_REQUIRED
+                    || *status == StatusCode::UNAUTHORIZED
+                {
                     let wait_seconds = 5u64 * retry_round as u64; // 每轮等待时间递增
                     log::warn!(
                         "[Gateway] 所有账号都返回 {} 错误，等{} 秒后重试 (第{} 轮)",
@@ -593,10 +602,7 @@ pub async fn proxy_handler(
             // 如果连续多次认证失败（非429/402/401），可能所有账号都不可用
             consecutive_auth_failures += 1;
             if consecutive_auth_failures >= MAX_AUTH_FAILURES {
-                log::error!(
-                    "[Gateway] 连续 {} 轮认证失败，停止重试",
-                    MAX_AUTH_FAILURES
-                );
+                log::error!("[Gateway] 连续 {} 轮认证失败，停止重试", MAX_AUTH_FAILURES);
 
                 // 如果有保存的错误详情，透传；否则返回通用认证错误
                 if let Some((status, error_type, message, response_body)) = last_retriable_error {
@@ -637,12 +643,8 @@ pub async fn proxy_handler(
             tried_account_ids.insert(extract_account_id_from_upstream(&creds));
             creds
         } else if account_attempt > 1 {
-            match resolve_upstream_credentials(
-                &state.config,
-                &state,
-                preferred_account_id_ref,
-            )
-            .await
+            match resolve_upstream_credentials(&state.config, &state, preferred_account_id_ref)
+                .await
             {
                 Ok(creds) => {
                     // 检查是否已经尝试过这个账号
@@ -1109,14 +1111,15 @@ pub async fn proxy_handler(
         aggregated.citations.len()
     );
 
-    // Prompt Cache 模拟：如果响应中没有缓存信息，用模拟器填充
-    if aggregated.cache_read_input_tokens.is_none()
-        && aggregated.cache_creation_input_tokens.is_none()
-    {
+    // Prompt Cache 模拟：只有上游明确返回正数缓存 usage 时才采用上游值。
+    // Kiro 常会返回 Some(0)，这不代表它完成了缓存计费；此时仍需使用
+    // 代理自己的账号隔离缓存估算器。
+    let has_upstream_cache_usage = aggregated.cache_read_input_tokens.unwrap_or(0) > 0
+        || aggregated.cache_creation_input_tokens.unwrap_or(0) > 0;
+    if !has_upstream_cache_usage {
         let tracker = crate::gateway::prompt_cache::global_prompt_cache_tracker();
-        let messages_json = crate::gateway::prompt_cache::normalized_messages_for_cache(
-            &request.messages,
-        );
+        let messages_json =
+            crate::gateway::prompt_cache::normalized_messages_for_cache(&request.messages);
         let tools_json: Option<Vec<serde_json::Value>> = request.tools.as_ref().map(|tools| {
             tools
                 .iter()
@@ -1329,19 +1332,28 @@ pub async fn call_generate_assistant_response<T: serde::Serialize + ?Sized>(
 
         // 402 配额不足错误不重试，直接返回让外层切换账号
         if mapped_status == StatusCode::PAYMENT_REQUIRED {
-            log::warn!("[网关] 上游 402 配额不足，type={}，交给外层切换账号", error_type);
+            log::warn!(
+                "[网关] 上游 402 配额不足，type={}，交给外层切换账号",
+                error_type
+            );
             return Err((mapped_status, error_type, message, Some(body)));
         }
 
         // 429 限流错误不重试，直接返回让外层切换账号
         if mapped_status == StatusCode::TOO_MANY_REQUESTS {
-            log::warn!("[网关] 上游 429 限流，type={}，交给外层切换账号", error_type);
+            log::warn!(
+                "[网关] 上游 429 限流，type={}，交给外层切换账号",
+                error_type
+            );
             return Err((mapped_status, error_type, message, Some(body)));
         }
 
         // 401 认证错误不在 HTTP 层重试；交给外层刷新当前账号 token 或切换账号。
         if mapped_status == StatusCode::UNAUTHORIZED {
-            log::warn!("[网关] 上游 401 认证错误，type={}，交给外层处理", error_type);
+            log::warn!(
+                "[网关] 上游 401 认证错误，type={}，交给外层处理",
+                error_type
+            );
             return Err((mapped_status, error_type, message, Some(body)));
         }
 

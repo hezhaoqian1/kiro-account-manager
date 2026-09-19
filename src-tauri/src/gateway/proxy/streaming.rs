@@ -88,8 +88,8 @@ pub fn stream_proxy_response(
                 role: Some("assistant".to_string()),
                 content: Some("".to_string()),
                 tool_calls: None,
-audio: None,
-function_call: None,
+                audio: None,
+                function_call: None,
             };
             let chunk =
                 stream::build_openai_chunk(&completion_id, created, &model, delta, None, None);
@@ -158,7 +158,8 @@ function_call: None,
 
                                 // 写入每个 EventStream 事件到文件
                                 {
-                                    let log_dir = crate::core::paths::app_data_dir_or_default().join("logs");
+                                    let log_dir =
+                                        crate::core::paths::app_data_dir_or_default().join("logs");
                                     let _ = std::fs::create_dir_all(&log_dir);
                                     let entry = format!(
                                         "[{}] kind=kiro_event idx={} event={} bytes={} chars={} body={}\n",
@@ -266,9 +267,9 @@ function_call: None,
                                         KiroEvent::Text(text) => {
                                             for segment in parser.push_and_parse(&text) {
                                                 match &segment.segment_type {
-                                                    SegmentType::Thinking => {
-                                                        aggregated.thinking.push_str(&segment.content)
-                                                    }
+                                                    SegmentType::Thinking => aggregated
+                                                        .thinking
+                                                        .push_str(&segment.content),
                                                     SegmentType::Text => {
                                                         aggregated.text.push_str(&segment.content)
                                                     }
@@ -467,7 +468,9 @@ function_call: None,
                                                                     &tx,
                                                                     &mut thinking_block_index,
                                                                     &aggregated.thinking,
-                                                                    aggregated.thinking_signature.as_deref(),
+                                                                    aggregated
+                                                                        .thinking_signature
+                                                                        .as_deref(),
                                                                     &mut thinking_signature_sent,
                                                                 )
                                                                 .await;
@@ -925,10 +928,12 @@ function_call: None,
             "upstream"
         };
 
-        // Prompt Cache 模拟：如果响应中没有缓存信息，用模拟器填充
-        if aggregated.cache_read_input_tokens.is_none()
-            && aggregated.cache_creation_input_tokens.is_none()
-        {
+        // Prompt Cache 模拟：只有上游明确返回正数缓存 usage 时才采用上游值。
+        // Kiro 常会返回 Some(0)，这不代表它完成了缓存计费；此时仍需使用
+        // 代理自己的账号隔离缓存估算器。
+        let has_upstream_cache_usage = aggregated.cache_read_input_tokens.unwrap_or(0) > 0
+            || aggregated.cache_creation_input_tokens.unwrap_or(0) > 0;
+        if !has_upstream_cache_usage {
             let tracker = crate::gateway::prompt_cache::global_prompt_cache_tracker();
             let messages_json =
                 crate::gateway::prompt_cache::normalized_messages_for_cache(&request_messages);
@@ -1388,8 +1393,8 @@ pub async fn handle_stream_text(
                 },
                 content: Some(text.to_string()),
                 tool_calls: None,
-audio: None,
-function_call: None,
+                audio: None,
+                function_call: None,
             };
             let chunk = crate::gateway::stream::build_openai_chunk(
                 completion_id,
