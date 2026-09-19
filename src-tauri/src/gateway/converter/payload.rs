@@ -222,9 +222,10 @@ pub async fn build_kiro_payload(
             );
 
             // 判断降级后的模型是否支持 Adaptive Thinking
-            let supports_adaptive =
-                (model_id.contains("opus") && (model_id.contains("4.7") || model_id.contains("4-7")))
-                || (model_id.contains("sonnet") && (model_id.contains("4.6") || model_id.contains("4-6")));
+            let supports_adaptive = (model_id.contains("opus")
+                && (model_id.contains("4.7") || model_id.contains("4-7")))
+                || (model_id.contains("sonnet")
+                    && (model_id.contains("4.6") || model_id.contains("4-6")));
 
             let thinking_type = if supports_adaptive {
                 "adaptive"
@@ -247,6 +248,7 @@ pub async fn build_kiro_payload(
     let agent_continuation_id = conversation_id.clone();
     let (processed_tools, tool_docs) = process_tools_with_long_descriptions(&request.tools);
     let tool_docs_for_current = tool_docs.clone();
+    let has_explicit_cache_marker = request.messages.iter().any(message_has_cache_marker);
 
     let mut system_prompt = String::new();
     let mut other_messages = Vec::new();
@@ -296,6 +298,15 @@ pub async fn build_kiro_payload(
         );
     }
 
+    // Kiro 的原生 prompt cache 以 userInputMessage.cachePoint 为断点。
+    // system/tools 是代理稳定前缀，即使客户端没有发送 cache_control，也应
+    // 启用原生缓存；显式 cache_point 则保持兼容并强制启用当前断点。
+    let native_cache_enabled = !system_prompt.is_empty()
+        || processed_tools
+            .as_ref()
+            .is_some_and(|tools| !tools.is_empty())
+        || has_explicit_cache_marker;
+
     if other_messages.is_empty() {
         return Err("没有可发送的消息".to_string());
     }
@@ -305,6 +316,19 @@ pub async fn build_kiro_payload(
     let first_user_index = merged_messages
         .iter()
         .position(|message| matches!(message.role.as_str(), "user" | "tool"));
+    let history_len = merged_messages.len().saturating_sub(1);
+    let early_cache_anchor_index = if native_cache_enabled && history_len > 10 {
+        let target_index = history_len - 10;
+        merged_messages[..history_len]
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(index, message)| {
+                (index <= target_index && message.role == "assistant").then_some(index)
+            })
+    } else {
+        None
+    };
 
     let (history, sanitized_current) = if merged_messages.len() > 1 {
         let mut history_items = Vec::new();
@@ -315,7 +339,16 @@ pub async fn build_kiro_payload(
         {
             match message.role.as_str() {
                 "assistant" => {
-                    let assistant_msg = build_history_assistant_message(message);
+                    let mut assistant_msg = build_history_assistant_message(message);
+
+                    // 在较早且稳定的历史边界建立第二个 Kiro 缓存断点，避免
+                    // 每一轮都把整个 conversation 重新写入缓存。保留客户端
+                    // 或上游历史中已有的 cachePoint，不覆盖真实语义。
+                    if early_cache_anchor_index == Some(index)
+                        && assistant_msg.cache_point.is_none()
+                    {
+                        assistant_msg.cache_point = Some(json!({"type": "default"}));
+                    }
 
                     history_items.push(HistoryItem::Assistant {
                         assistant_response_message: assistant_msg,
@@ -323,12 +356,6 @@ pub async fn build_kiro_payload(
                 }
                 "user" => {
                     let mut content = extract_text_content(message.content.as_ref());
-
-                    // Prompt Caching 策略 1：缓存系统提示
-                    // 在第一条用户消息中添加系统提示，并标记缓存点
-                    let should_add_cache_point = Some(index) == first_user_index
-                        && !system_prompt.is_empty()
-                        && processed_tools.is_some(); // 只有在有工具定义时才缓存系统提示
 
                     if Some(index) == first_user_index && !system_prompt.is_empty() {
                         content = join_with_double_newline(&system_prompt, &content);
@@ -341,14 +368,6 @@ pub async fn build_kiro_payload(
                     // 规则 7：user 消息必须有 content 或 toolResults
                     if content.trim().is_empty() && tool_results.is_empty() {
                         content = "Continue".to_string();
-                    }
-
-                    // 如果需要缓存系统提示，在用户上下文中添加缓存点
-                    if should_add_cache_point {
-                        if let Some(ref _ctx) = user_context {
-                            // 注意：缓存点应该添加在系统提示之后，工具定义之前
-                            // 但由于 Kiro API 的限制，我们只能在消息级别添加缓存点
-                        }
                     }
 
                     history_items.push(HistoryItem::User {
@@ -538,7 +557,7 @@ pub async fn build_kiro_payload(
                     content: current_content,
                     model_id,
                     origin: "AI_EDITOR".to_string(),
-                    cache_point: None,
+                    cache_point: native_cache_enabled.then(|| json!({"type": "default"})),
                     client_cache_config: None,
                     documents: None,
                     images: images_option(current_images),
@@ -555,4 +574,14 @@ pub async fn build_kiro_payload(
         },
         profile_arn,
     })
+}
+
+fn message_has_cache_marker(message: &NormalizedMessage) -> bool {
+    message
+        .metadata
+        .as_ref()
+        .and_then(Value::as_object)
+        .is_some_and(|metadata| {
+            metadata.contains_key("cache_point") || metadata.contains_key("cachePoint")
+        })
 }

@@ -86,6 +86,11 @@ async fn build_kiro_payload_moves_long_tool_docs_and_tool_results_into_context()
         payload.profile_arn.as_deref(),
         Some("arn:aws:codewhisperer:::profile/test")
     );
+    assert_eq!(
+        current.cache_point,
+        Some(json!({ "type": "default" })),
+        "system/tools 前缀必须启用 Kiro 原生 prompt cache"
+    );
 
     let history = payload
         .conversation_state
@@ -156,6 +161,12 @@ async fn build_kiro_payload_uses_cached_style_model_ids_for_claude_45() {
             .model_id,
         "claude-sonnet-4.5"
     );
+    assert!(payload
+        .conversation_state
+        .current_message
+        .user_input_message
+        .cache_point
+        .is_none());
 }
 
 #[tokio::test]
@@ -623,4 +634,75 @@ async fn build_kiro_payload_preserves_assistant_message_metadata() {
         }
         other => panic!("unexpected history item: {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn build_kiro_payload_adds_native_cache_point_to_early_assistant_history() {
+    let mut messages = vec![NormalizedMessage {
+        role: "system".to_string(),
+        content: Some(json!("稳定系统提示")),
+        tool_calls: None,
+        tool_call_id: None,
+        metadata: None,
+    }];
+
+    for index in 0..6 {
+        messages.push(NormalizedMessage {
+            role: "user".to_string(),
+            content: Some(json!(format!("用户消息 {index}"))),
+            tool_calls: None,
+            tool_call_id: None,
+            metadata: None,
+        });
+        messages.push(NormalizedMessage {
+            role: "assistant".to_string(),
+            content: Some(json!(format!("助手消息 {index}"))),
+            tool_calls: None,
+            tool_call_id: None,
+            metadata: None,
+        });
+    }
+    messages.push(NormalizedMessage {
+        role: "user".to_string(),
+        content: Some(json!("当前问题")),
+        tool_calls: None,
+        tool_call_id: None,
+        metadata: None,
+    });
+
+    let request = NormalizedRequest {
+        model: "claude-sonnet-4-5-20250929".to_string(),
+        messages,
+        stream: false,
+        max_tokens: Some(1024),
+        temperature: None,
+        top_p: None,
+        stop: None,
+        tools: None,
+        tool_choice: None,
+        previous_response_id: None,
+        thinking: None,
+        include_usage: false,
+        tool_name_map: Default::default(),
+    };
+
+    let payload = build_kiro_payload(&Client::new(), &request, None, None)
+        .await
+        .expect("payload should build");
+    let history = payload
+        .conversation_state
+        .history
+        .expect("history should exist");
+    let cache_points: Vec<_> = history
+        .iter()
+        .filter_map(|item| match item {
+            HistoryItem::Assistant {
+                assistant_response_message,
+            } => assistant_response_message.cache_point.as_ref(),
+            HistoryItem::User { .. } => None,
+        })
+        .collect();
+
+    assert_eq!(cache_points.len(), 1);
+    assert_eq!(cache_points[0], &json!({ "type": "default" }));
 }

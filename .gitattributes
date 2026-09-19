@@ -4,7 +4,9 @@
 # Preserve legacy line endings for gateway files that predate the LF policy.
 src-tauri/src/gateway/converter/content.rs text eol=crlf
 src-tauri/src/gateway/converter/history.rs text eol=crlf
+src-tauri/src/gateway/converter/payload.rs -text
 src-tauri/src/gateway/converter/tests/content.rs text eol=crlf
+src-tauri/src/gateway/converter/tests/payload.rs -text
 *.js text eol=lf
 *.jsx text eol=lf
 *.json text eol=lf
