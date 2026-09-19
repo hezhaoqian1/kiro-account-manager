@@ -1,6 +1,71 @@
 //! 下游响应体构造：Anthropic / OpenAI Responses 的响应与引用（citation）拼装。
 
 use super::*;
+use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine as _};
+use sha2::{Digest, Sha256};
+
+/// Add a deterministic opaque signature when Kiro did not provide one.
+///
+/// Kiro's reasoning stream does not consistently include Anthropic's signed
+/// thinking metadata. The downstream Anthropic schema still requires a
+/// string signature for a thinking block, so the proxy creates a stable,
+/// proxy-scoped value. It is intentionally not presented as an upstream
+/// Kiro signature and is only used for conversation round-tripping through
+/// this proxy.
+pub fn ensure_thinking_signature(aggregated: &mut stream::AggregatedKiroResponse) {
+    if aggregated.thinking.is_empty()
+        || aggregated
+            .thinking_signature
+            .as_ref()
+            .is_some_and(|signature| !signature.trim().is_empty())
+    {
+        return;
+    }
+
+    aggregated.thinking_signature = Some(build_proxy_thinking_signature(&aggregated.thinking));
+}
+
+pub fn build_proxy_thinking_signature(thinking: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"kiro-account-manager-thinking-signature-v1\0");
+    hasher.update(thinking.as_bytes());
+    format!(
+        "kiro-proxy-v1-{}",
+        STANDARD_NO_PAD.encode(hasher.finalize())
+    )
+}
+
+/// Normalize Kiro text that contains `<thinking>...</thinking>` markers.
+///
+/// Streaming responses already pass through `ThinkingParser` incrementally,
+/// while non-streaming responses are aggregated first. Running this helper on
+/// both paths keeps their Anthropic content block shapes identical.
+pub fn normalize_thinking_tags(aggregated: &mut stream::AggregatedKiroResponse) {
+    let has_thinking_tags = aggregated.text.contains("<thinking>")
+        || aggregated.text.contains("</thinking>");
+    if has_thinking_tags && !aggregated.text.is_empty() {
+        let mut parser = ThinkingParser::new();
+        let mut thinking = String::new();
+        let mut text = String::new();
+        let mut segments = parser.push_and_parse(&aggregated.text);
+        segments.extend(parser.flush());
+
+        if parser.has_extracted_thinking() {
+            for segment in segments {
+                match segment.segment_type {
+                    SegmentType::Thinking => thinking.push_str(&segment.content),
+                    SegmentType::Text => text.push_str(&segment.content),
+                }
+            }
+            if aggregated.thinking.is_empty() {
+                aggregated.thinking = thinking;
+            }
+            aggregated.text = text;
+        }
+    }
+
+    ensure_thinking_signature(aggregated);
+}
 
 pub fn slice_text_by_char_range(text: &str, start: usize, end: usize) -> Option<String> {
     if end < start {
@@ -108,7 +173,13 @@ pub fn build_anthropic_content_blocks(
             block_type: "thinking".to_string(),
             text: None,
             thinking: Some(aggregated.thinking.clone()),
-            signature: aggregated.thinking_signature.clone(),
+            signature: Some(
+                aggregated
+                    .thinking_signature
+                    .clone()
+                    .filter(|signature| !signature.trim().is_empty())
+                    .unwrap_or_else(|| build_proxy_thinking_signature(&aggregated.thinking)),
+            ),
             id: None,
             name: None,
             input: None,
