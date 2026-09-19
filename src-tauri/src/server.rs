@@ -33,7 +33,7 @@ use kiro_account_manager::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::{env, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{env, sync::Arc};
 use tauri::{Manager, State as TauriState};
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -247,7 +247,12 @@ async fn dispatch_command(
             let ids = args.get("ids").cloned().and_then(|value| serde_json::from_value(value).ok());
             Ok(json!(account_cmd::export_accounts(state, ids)))
         }
-        "delete_account" => account_cmd::delete_account(state, arg_string(&args, "id")?).then_some(Value::Null).ok_or_else(|| "删除账号失败".to_string()),
+        "delete_account" => {
+            let id = arg_string(&args, "id")?;
+            account_cmd::delete_account(state, &id)
+                .then_some(Value::Null)
+                .ok_or_else(|| "删除账号失败".to_string())
+        }
         "delete_accounts" => {
             let ids: Vec<String> = serde_json::from_value(args.get("ids").cloned().unwrap_or_default()).map_err(|e| e.to_string())?;
             Ok(json!(account_cmd::delete_accounts(state, ids)))
@@ -506,7 +511,8 @@ async fn oauth_callback(
         .clone()
         .or_else(|| user_id.clone())
         .unwrap_or_else(|| format!("{}_{}", pending.provider.to_lowercase(), &token.refresh_token[..8.min(token.refresh_token.len())]));
-    let mut store = match lock_store(&tauri_state(&ctx).store, "store") {
+    let app_state = tauri_state(&ctx);
+    let mut store = match lock_store(&app_state.store, "store") {
         Ok(store) => store,
         Err(error) => return internal_error(error),
     };
