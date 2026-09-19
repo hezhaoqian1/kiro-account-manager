@@ -469,10 +469,11 @@ async fn oauth_callback(
 
     let pending = {
         let app_state = tauri_state(&ctx);
-        match lock_store(&app_state.pending_login, "pending_login") {
+        let pending = match lock_store(&app_state.pending_login, "pending_login") {
             Ok(mut slot) => slot.take(),
             Err(error) => return internal_error(error),
-        }
+        };
+        pending
     };
     let Some(pending) = pending else {
         return bad_request("登录会话不存在或已过期，请重新开始登录");
