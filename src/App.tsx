@@ -143,15 +143,17 @@ function App() {
     setUser(null)
   }
 
-  if (!isTauriRuntime() && (!authChecked || !user)) {
-    return <WebAdminLogin onAuthenticated={() => window.location.reload()} />
-  }
-
+  // Keep every hook above the Web login early return so the hook order stays
+  // stable when the admin session is restored.
   const routeProps = useMemo<Record<string, any>>(() => ({
     home: { onNavigate: setActiveMenu },
     desktopOAuth: { onLogin: () => { handleLogin(); setActiveMenu('accounts') } },
     accounts: { onNavigate: setActiveMenu }
   }), [])
+
+  if (!isTauriRuntime() && (!authChecked || !user)) {
+    return <WebAdminLogin onAuthenticated={() => window.location.reload()} />
+  }
 
   const renderContent = () => {
     if (!shouldPersistRoute(activeMenu)) {
