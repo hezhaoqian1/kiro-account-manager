@@ -166,7 +166,19 @@ export const buildGatewayConnectHost = (host: string, localOnly: boolean): strin
   return value
 }
 
-export const buildGatewayBaseUrl = (host: string, port: number, localOnly: boolean): string => {
+export const buildGatewayBaseUrl = (
+  host: string,
+  port: number,
+  localOnly: boolean,
+  publicOrigin = ''
+): string => {
+  // In the Railway web console the gateway shares the public HTTP listener.
+  // The bind address (0.0.0.0) and PORT are not client-facing coordinates.
+  // Desktop keeps using the configured local bind address.
+  const origin = String(publicOrigin || '').trim().replace(/\/+$/, '')
+  if (!localOnly && /^https?:\/\//i.test(origin)) {
+    return origin
+  }
   const connectHost = buildGatewayConnectHost(host, localOnly)
   const needsBrackets = connectHost.includes(':') && !connectHost.startsWith('[')
   const normalizedHost = needsBrackets ? `[${connectHost}]` : connectHost

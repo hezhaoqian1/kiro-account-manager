@@ -67,6 +67,7 @@ import {
   hydrateGatewayConfig
 } from './gatewayPageState'
 import { useGatewayPolling } from './useGatewayPolling'
+import { isTauriRuntime } from '../../../compat/tauriCore'
 
 function Alert(props: any) {
   return <AlertPrimitive {...props} />
@@ -170,7 +171,12 @@ function GatewayPage() {
     [status.running, status.runtimeConfig, config]
   )
   const effectiveBaseUrl = useMemo(
-    () => buildGatewayBaseUrl(effectiveConfig.host, effectiveConfig.port, effectiveConfig.localOnly),
+    () => buildGatewayBaseUrl(
+      effectiveConfig.host,
+      effectiveConfig.port,
+      effectiveConfig.localOnly,
+      !isTauriRuntime() && typeof window !== 'undefined' ? window.location.origin : '',
+    ),
     [effectiveConfig.host, effectiveConfig.port, effectiveConfig.localOnly]
   )
   const actionSummary = useMemo(

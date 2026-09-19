@@ -103,6 +103,13 @@ test('buildGatewayBaseUrl brackets ipv6 addresses for clients', () => {
   assert.equal(buildGatewayBaseUrl('0.0.0.0', 8765, false), 'http://localhost:8765')
 })
 
+test('buildGatewayBaseUrl uses the public web origin for headless remote access', () => {
+  assert.equal(
+    buildGatewayBaseUrl('0.0.0.0', 8080, false, 'https://kiro.example.com/'),
+    'https://kiro.example.com',
+  )
+})
+
 test('buildClientSamples redacts full api key in integration snippets', () => {
   const samples = buildClientSamples('http://127.0.0.1:8765', 'sk-super-secret-value')
 
