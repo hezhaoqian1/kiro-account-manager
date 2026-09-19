@@ -24,8 +24,8 @@ use kiro_account_manager::{
             find_existing_account_idx, generate_account_machine_id,
             get_usage_by_provider_with_machine_id, lock_store, save_store, update_account_status,
         },
-        custom_agents_cmd, gateway_cmd, hooks_cmd, kiro_settings_cmd, mcp_cmd, permissions_cmd,
-        proxy_cmd, skills_cmd, specs_cmd, steering_cmd, workflows_cmd,
+        custom_agents_cmd, gateway_cmd, hooks_cmd, kiro_settings_cmd, machine_guid, mcp_cmd,
+        permissions_cmd, powers_cmd, proxy_cmd, skills_cmd, specs_cmd, steering_cmd, workflows_cmd,
     },
     core::{
         self,
@@ -602,6 +602,21 @@ async fn dispatch_command(
         )
         .await
         .map(|_| Value::Null),
+        "read_cloud_config_enabled" => kiro_settings_cmd::read_cloud_config_enabled()
+            .await
+            .map(|value| json!(value)),
+        "read_remote_sessions_env_override" => {
+            kiro_settings_cmd::read_remote_sessions_env_override()
+                .await
+                .map(|value| json!(value))
+        }
+
+        "generate_machine_guid" => Ok(json!(machine_guid::generate_machine_guid())),
+        "set_custom_machine_guid" => {
+            machine_guid::set_custom_machine_guid(arg_string(&args, "newGuid")?)
+                .await
+                .map(|value| json!(value))
+        }
 
         "get_permissions" => permissions_cmd::get_permissions(
             optional_string(&args, "scope"),
@@ -935,6 +950,33 @@ async fn dispatch_command(
         )
         .await
         .map(|_| Value::Null),
+
+        "get_powers" => powers_cmd::get_powers().await.map(|v| json!(v)),
+        "get_power" => powers_cmd::get_power(arg_string(&args, "name")?)
+            .await
+            .map(|v| json!(v)),
+        "install_power" => powers_cmd::install_power(
+            arg_string(&args, "name")?,
+            arg_string(&args, "cloneUrl")?,
+            arg_string(&args, "pathInRepo")?,
+            arg_string(&args, "branch")?,
+        )
+        .await
+        .map(|_| Value::Null),
+        "install_power_from_local" => {
+            powers_cmd::install_power_from_local(arg_string(&args, "sourceDir")?)
+                .await
+                .map(|v| json!(v))
+        }
+        "install_power_from_url" => powers_cmd::install_power_from_url(arg_string(&args, "url")?)
+            .await
+            .map(|v| json!(v)),
+        "uninstall_power" => powers_cmd::uninstall_power(arg_string(&args, "name")?)
+            .await
+            .map(|_| Value::Null),
+        "get_power_registries" => powers_cmd::get_power_registries().await.map(|v| json!(v)),
+        "get_user_added_powers" => powers_cmd::get_user_added_powers().await.map(|v| json!(v)),
+        "get_recommended_powers" => powers_cmd::get_recommended_powers().await.map(|v| json!(v)),
 
         "get_groups" => Ok(json!(
             kiro_account_manager::commands::group_tag_cmd::get_groups(state)
