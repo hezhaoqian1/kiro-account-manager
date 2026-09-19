@@ -511,46 +511,49 @@ async fn oauth_callback(
         .clone()
         .or_else(|| user_id.clone())
         .unwrap_or_else(|| format!("{}_{}", pending.provider.to_lowercase(), &token.refresh_token[..8.min(token.refresh_token.len())]));
-    let app_state = tauri_state(&ctx);
-    let mut store = match lock_store(&app_state.store, "store") {
-        Ok(store) => store,
-        Err(error) => return internal_error(error),
-    };
-    let existing = find_existing_account_idx(
-        &store.accounts,
-        email.as_ref(),
-        &pending.provider,
-        &token.refresh_token,
-        user_id.as_ref(),
-    );
-    let account = if let Some(index) = existing {
-        let account = &mut store.accounts[index];
-        account.access_token = Some(token.access_token.clone());
-        account.refresh_token = Some(token.refresh_token.clone());
-        account.profile_arn = token.profile_arn.clone();
-        account.user_id = user_id;
-        account.usage_data = Some(usage.usage_data);
-        account.machine_id = Some(pending.machineid.clone());
-        update_account_status(account, usage.is_banned, usage.is_auth_error);
-        account.clone()
-    } else {
-        let mut account = Account::new(display, format!("Kiro {} 账号", pending.provider));
-        account.email = email;
-        account.access_token = Some(token.access_token.clone());
-        account.refresh_token = Some(token.refresh_token.clone());
-        account.profile_arn = token.profile_arn.clone();
-        account.provider = Some(pending.provider.clone());
-        account.auth_method = Some("social".to_string());
-        account.user_id = user_id;
-        account.usage_data = Some(usage.usage_data);
-        account.machine_id = Some(pending.machineid.clone());
-        update_account_status(&mut account, usage.is_banned, usage.is_auth_error);
-        store.accounts.insert(0, account.clone());
+    let account = {
+        let app_state = tauri_state(&ctx);
+        let mut store = match lock_store(&app_state.store, "store") {
+            Ok(store) => store,
+            Err(error) => return internal_error(error),
+        };
+        let existing = find_existing_account_idx(
+            &store.accounts,
+            email.as_ref(),
+            &pending.provider,
+            &token.refresh_token,
+            user_id.as_ref(),
+        );
+        let account = if let Some(index) = existing {
+            let account = &mut store.accounts[index];
+            account.access_token = Some(token.access_token.clone());
+            account.refresh_token = Some(token.refresh_token.clone());
+            account.profile_arn = token.profile_arn.clone();
+            account.user_id = user_id;
+            account.usage_data = Some(usage.usage_data);
+            account.machine_id = Some(pending.machineid.clone());
+            update_account_status(account, usage.is_banned, usage.is_auth_error);
+            account.clone()
+        } else {
+            let mut account = Account::new(display, format!("Kiro {} 账号", pending.provider));
+            account.email = email;
+            account.access_token = Some(token.access_token.clone());
+            account.refresh_token = Some(token.refresh_token.clone());
+            account.profile_arn = token.profile_arn.clone();
+            account.provider = Some(pending.provider.clone());
+            account.auth_method = Some("social".to_string());
+            account.user_id = user_id;
+            account.usage_data = Some(usage.usage_data);
+            account.machine_id = Some(pending.machineid.clone());
+            update_account_status(&mut account, usage.is_banned, usage.is_auth_error);
+            store.accounts.insert(0, account.clone());
+            account
+        };
+        if let Err(error) = save_store(&store) {
+            return internal_error(error);
+        }
         account
     };
-    if let Err(error) = save_store(&store) {
-        return internal_error(error);
-    }
     let _ = ctx.db.sync_now().await;
     Html(format!(
         "<h2>登录成功</h2><p>{}</p><p>可以关闭此页面并返回管理后台。</p>",
