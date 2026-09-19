@@ -416,7 +416,16 @@ impl PromptCacheTracker {
                         if key == "cache_point" {
                             continue;
                         }
-                        normalized.insert(key.to_string(), normalize(&map[key]));
+                        let normalized_value = normalize(&map[key]);
+                        if key == "metadata"
+                            && (normalized_value.is_null()
+                                || normalized_value
+                                    .as_object()
+                                    .is_some_and(|object| object.is_empty()))
+                        {
+                            continue;
+                        }
+                        normalized.insert(key.to_string(), normalized_value);
                     }
                     serde_json::Value::Object(normalized)
                 }
