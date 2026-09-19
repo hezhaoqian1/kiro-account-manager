@@ -937,6 +937,7 @@ pub async fn proxy_handler(
             upstream_resp,
             format,
             request.model.clone(),
+            successful_upstream.account_id.clone(),
             request.messages.clone(),
             request.tools.clone(),
             request.tool_choice.clone(),
@@ -1074,6 +1075,10 @@ pub async fn proxy_handler(
     );
 
     let mut aggregated = stream::aggregate_kiro_response_from_payloads(&json_payloads);
+    // Non-streaming responses are aggregated before they reach the Anthropic
+    // response builder. Apply the same thinking-tag normalization used by the
+    // streaming path so callers receive real thinking/text blocks.
+    normalize_thinking_tags(&mut aggregated);
 
     // 直接使用本地估算 token（不依赖响应中的 token 信息）
     log::info!("[非流式响应] 使用本地 token 估算");
@@ -1109,16 +1114,9 @@ pub async fn proxy_handler(
         && aggregated.cache_creation_input_tokens.is_none()
     {
         let tracker = crate::gateway::prompt_cache::global_prompt_cache_tracker();
-        let messages_json: Vec<serde_json::Value> = request
-            .messages
-            .iter()
-            .map(|m| {
-                serde_json::json!({
-                    "role": m.role,
-                    "content": m.content
-                })
-            })
-            .collect();
+        let messages_json = crate::gateway::prompt_cache::normalized_messages_for_cache(
+            &request.messages,
+        );
         let tools_json: Option<Vec<serde_json::Value>> = request.tools.as_ref().map(|tools| {
             tools
                 .iter()
@@ -1133,8 +1131,8 @@ pub async fn proxy_handler(
             aggregated.input_tokens as usize,
             &request.model,
         ) {
-            let cache_usage = tracker.compute(&request.model, &profile);
-            tracker.update(&request.model, &profile);
+            let cache_usage = tracker.compute(&successful_upstream.account_id, &profile);
+            tracker.update(&successful_upstream.account_id, &profile);
 
             if cache_usage.cache_read_input_tokens > 0 {
                 aggregated.cache_read_input_tokens =

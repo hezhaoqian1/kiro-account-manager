@@ -339,7 +339,11 @@ pub fn build_history_assistant_message(message: &NormalizedMessage) -> HistoryAs
                 // 清理空 signature（Kiro API 不接受空字符串的 signature）
                 if let Some(rt) = rc.get_mut("reasoningText") {
                     if let Some(sig) = rt.get("signature") {
-                        if sig.as_str().map(|s| s.is_empty()).unwrap_or(false) {
+                        if sig
+                            .as_str()
+                            .map(|s| s.is_empty() || is_proxy_thinking_signature(s))
+                            .unwrap_or(false)
+                        {
                             rt.as_object_mut().map(|m| m.remove("signature"));
                         }
                     }

@@ -108,7 +108,6 @@ impl ThinkingParser {
         segments
     }
 
-    #[cfg(test)]
     pub fn has_extracted_thinking(&self) -> bool {
         self.thinking_extracted
     }

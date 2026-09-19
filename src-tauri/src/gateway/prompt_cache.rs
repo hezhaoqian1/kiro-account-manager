@@ -3,9 +3,12 @@
 //! 让 Claude Code 的 cache_control 字段产生实际效果的 usage 统计
 
 use sha2::{Digest, Sha256};
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
+
+use crate::gateway::models::NormalizedMessage;
 
 // 常量
 const DEFAULT_CACHE_TTL: Duration = Duration::from_secs(5 * 60); // 5 分钟
@@ -20,6 +23,24 @@ const MAX_ENTRIES_PER_ACCOUNT: usize = 200;
 pub struct CacheUsage {
     pub cache_creation_input_tokens: usize,
     pub cache_read_input_tokens: usize,
+}
+
+/// Convert normalized messages to the cache tracker's lossless JSON view.
+///
+/// Anthropic `cache_control` is normalized into `metadata.cache_point` before
+/// the Kiro payload is built. Keep that metadata here so the local estimator
+/// can still find the caller's cache breakpoint after normalization.
+pub fn normalized_messages_for_cache(messages: &[NormalizedMessage]) -> Vec<Value> {
+    messages
+        .iter()
+        .map(|message| {
+            json!({
+                "role": message.role,
+                "content": message.content,
+                "metadata": message.metadata,
+            })
+        })
+        .collect()
 }
 
 /// 缓存断点
@@ -327,14 +348,20 @@ impl PromptCacheTracker {
     }
 
     fn extract_ttl(&self, value: &serde_json::Value) -> Duration {
-        let cache_control = value.get("cache_control");
+        let cache_control = value.get("cache_control").or_else(|| {
+            value
+                .get("metadata")
+                .and_then(|metadata| metadata.get("cache_point"))
+        });
         let Some(cc) = cache_control else {
             return Duration::ZERO;
         };
         let Some(cc_type) = cc.get("type").and_then(|t| t.as_str()) else {
             return Duration::ZERO;
         };
-        if !cc_type.eq_ignore_ascii_case("ephemeral") {
+        if !cc_type.eq_ignore_ascii_case("ephemeral")
+            && !cc_type.eq_ignore_ascii_case("default")
+        {
             return Duration::ZERO;
         }
         // 检查 ttl 字段
@@ -409,4 +436,43 @@ static GLOBAL_TRACKER: std::sync::OnceLock<PromptCacheTracker> = std::sync::Once
 
 pub fn global_prompt_cache_tracker() -> &'static PromptCacheTracker {
     GLOBAL_TRACKER.get_or_init(PromptCacheTracker::new)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cache_message() -> NormalizedMessage {
+        NormalizedMessage {
+            role: "user".to_string(),
+            content: Some(Value::String("cacheable context ".repeat(300))),
+            tool_calls: None,
+            tool_call_id: None,
+            metadata: Some(json!({
+                "cache_point": { "type": "default" }
+            })),
+        }
+    }
+
+    #[test]
+    fn normalized_cache_point_creates_and_reads_cache_per_account() {
+        let tracker = PromptCacheTracker::new();
+        let messages = normalized_messages_for_cache(&[cache_message()]);
+        let profile = tracker
+            .build_profile(None, &messages, None, 1500, "claude-sonnet-4.5")
+            .expect("cache point should create a profile");
+
+        let created = tracker.compute("account-a", &profile);
+        assert!(created.cache_creation_input_tokens >= 1024);
+        assert_eq!(created.cache_read_input_tokens, 0);
+        tracker.update("account-a", &profile);
+
+        let hit = tracker.compute("account-a", &profile);
+        assert!(hit.cache_read_input_tokens >= 1024);
+        assert_eq!(hit.cache_creation_input_tokens, 0);
+
+        let other_account = tracker.compute("account-b", &profile);
+        assert_eq!(other_account.cache_read_input_tokens, 0);
+        assert!(other_account.cache_creation_input_tokens >= 1024);
+    }
 }

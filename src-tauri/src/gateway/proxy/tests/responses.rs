@@ -153,6 +153,35 @@ fn build_anthropic_response_maps_kiro_citations_into_sdk_shape() {
 }
 
 #[test]
+fn build_anthropic_response_normalizes_thinking_and_adds_proxy_signature() {
+    let mut aggregated = stream::AggregatedKiroResponse {
+        text: "<thinking>plan first</thinking>\nfinal answer".to_string(),
+        thinking: String::new(),
+        thinking_signature: None,
+        tool_calls: Vec::new(),
+        input_tokens: 10,
+        output_tokens: 8,
+        context_usage_percentage: None,
+        citations: Vec::new(),
+        cache_read_input_tokens: Some(1024),
+        cache_creation_input_tokens: None,
+        metering_usage: None,
+    };
+
+    normalize_thinking_tags(&mut aggregated);
+    let response = build_anthropic_response("claude-sonnet-4.5", &aggregated);
+
+    assert_eq!(response["content"][0]["type"], "thinking");
+    assert_eq!(response["content"][0]["thinking"], "plan first");
+    assert!(response["content"][0]["signature"]
+        .as_str()
+        .is_some_and(|signature| signature.starts_with("kiro-proxy-v1-")));
+    assert_eq!(response["content"][1]["type"], "text");
+    assert_eq!(response["content"][1]["text"], "final answer");
+    assert_eq!(response["usage"]["cache_read_input_tokens"], 1024);
+}
+
+#[test]
 fn build_stream_responses_completed_event_keeps_citations_and_tool_calls() {
     let aggregated = stream::AggregatedKiroResponse {
         text: "Hello Rust".to_string(),

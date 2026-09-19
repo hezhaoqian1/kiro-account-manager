@@ -7,6 +7,7 @@ pub fn stream_proxy_response(
     upstream_resp: reqwest::Response,
     format: ResponseFormat,
     model: String,
+    account_id: String,
     request_messages: Vec<NormalizedMessage>,
     request_tools: Option<Vec<Tool>>,
     request_tool_choice: Option<Value>,
@@ -35,6 +36,7 @@ pub fn stream_proxy_response(
         let mut next_block_index = 0usize;
         let mut text_block_index: Option<usize> = None;
         let mut thinking_block_index: Option<usize> = None;
+        let mut thinking_signature_sent = false;
         let mut tool_block_indexes: HashMap<String, usize> = HashMap::new();
         let mut openai_tool_call_indexes: HashMap<String, i32> = HashMap::new();
         let mut openai_next_tool_index = 0i32;
@@ -244,6 +246,9 @@ function_call: None,
                                                 created_at,
                                                 &text,
                                                 true,
+                                                &aggregated.thinking,
+                                                aggregated.thinking_signature.as_deref(),
+                                                &mut thinking_signature_sent,
                                                 &mut message_started,
                                                 &mut next_block_index,
                                                 &mut text_block_index,
@@ -259,8 +264,15 @@ function_call: None,
                                             aggregated.thinking_signature = Some(sig);
                                         }
                                         KiroEvent::Text(text) => {
-                                            aggregated.text.push_str(&text);
                                             for segment in parser.push_and_parse(&text) {
+                                                match &segment.segment_type {
+                                                    SegmentType::Thinking => {
+                                                        aggregated.thinking.push_str(&segment.content)
+                                                    }
+                                                    SegmentType::Text => {
+                                                        aggregated.text.push_str(&segment.content)
+                                                    }
+                                                }
                                                 handle_stream_text(
                                                     &tx,
                                                     format,
@@ -271,6 +283,9 @@ function_call: None,
                                                     created_at,
                                                     &segment.content,
                                                     segment.segment_type == SegmentType::Thinking,
+                                                    &aggregated.thinking,
+                                                    aggregated.thinking_signature.as_deref(),
+                                                    &mut thinking_signature_sent,
                                                     &mut message_started,
                                                     &mut next_block_index,
                                                     &mut text_block_index,
@@ -307,9 +322,12 @@ function_call: None,
                                                     .await;
                                                     close_content_block(&tx, &mut text_block_index)
                                                         .await;
-                                                    close_content_block(
+                                                    close_thinking_block(
                                                         &tx,
                                                         &mut thinking_block_index,
+                                                        &aggregated.thinking,
+                                                        aggregated.thinking_signature.as_deref(),
+                                                        &mut thinking_signature_sent,
                                                     )
                                                     .await;
                                                     let index = next_block_index;
@@ -445,9 +463,12 @@ function_call: None,
                                                                     &mut text_block_index,
                                                                 )
                                                                 .await;
-                                                                close_content_block(
+                                                                close_thinking_block(
                                                                     &tx,
                                                                     &mut thinking_block_index,
+                                                                    &aggregated.thinking,
+                                                                    aggregated.thinking_signature.as_deref(),
+                                                                    &mut thinking_signature_sent,
                                                                 )
                                                                 .await;
                                                                 let index = next_block_index;
@@ -700,9 +721,12 @@ function_call: None,
                                                         aggregated.cache_creation_input_tokens,
                                                     )
                                                     .await;
-                                                    close_content_block(
+                                                    close_thinking_block(
                                                         &tx,
                                                         &mut thinking_block_index,
+                                                        &aggregated.thinking,
+                                                        aggregated.thinking_signature.as_deref(),
+                                                        &mut thinking_signature_sent,
                                                     )
                                                     .await;
                                                     if text_block_index.is_none() {
@@ -839,6 +863,9 @@ function_call: None,
                 created_at,
                 &segment.content,
                 segment.segment_type == SegmentType::Thinking,
+                &aggregated.thinking,
+                aggregated.thinking_signature.as_deref(),
+                &mut thinking_signature_sent,
                 &mut message_started,
                 &mut next_block_index,
                 &mut text_block_index,
@@ -849,7 +876,12 @@ function_call: None,
                 aggregated.cache_creation_input_tokens,
             )
             .await;
+            match &segment.segment_type {
+                SegmentType::Thinking => aggregated.thinking.push_str(&segment.content),
+                SegmentType::Text => aggregated.text.push_str(&segment.content),
+            }
         }
+        ensure_thinking_signature(&mut aggregated);
         // 收集未关闭的工具调用（没有收到 stop 事件的），不要直接 push 到 aggregated.tool_calls
         // 因为 Anthropic 末尾分支需要区分"已正常 stop"和"未 stop"的，避免重复发送事件
         let unstopped_tools: Vec<(String, String, String)> = tool_accumulators
@@ -898,15 +930,8 @@ function_call: None,
             && aggregated.cache_creation_input_tokens.is_none()
         {
             let tracker = crate::gateway::prompt_cache::global_prompt_cache_tracker();
-            let messages_json: Vec<serde_json::Value> = request_messages
-                .iter()
-                .map(|m| {
-                    serde_json::json!({
-                        "role": m.role,
-                        "content": m.content
-                    })
-                })
-                .collect();
+            let messages_json =
+                crate::gateway::prompt_cache::normalized_messages_for_cache(&request_messages);
             let tools_json: Option<Vec<serde_json::Value>> = request_tools.as_ref().map(|tools| {
                 tools
                     .iter()
@@ -921,9 +946,8 @@ function_call: None,
                 aggregated.input_tokens as usize,
                 &model,
             ) {
-                let account_id = model.as_str();
-                let cache_usage = tracker.compute(account_id, &profile);
-                tracker.update(account_id, &profile);
+                let cache_usage = tracker.compute(&account_id, &profile);
+                tracker.update(&account_id, &profile);
 
                 if cache_usage.cache_read_input_tokens > 0 {
                     aggregated.cache_read_input_tokens =
@@ -964,7 +988,14 @@ function_call: None,
         match format {
             ResponseFormat::Anthropic => {
                 close_content_block(&tx, &mut text_block_index).await;
-                close_content_block(&tx, &mut thinking_block_index).await;
+                close_thinking_block(
+                    &tx,
+                    &mut thinking_block_index,
+                    &aggregated.thinking,
+                    aggregated.thinking_signature.as_deref(),
+                    &mut thinking_signature_sent,
+                )
+                .await;
 
                 // 只处理"未收到 stop 事件"的工具调用，避免重复发送已经在流中正常 stop 过的
                 for (id, name, input) in &unstopped_tools {
@@ -1246,6 +1277,9 @@ pub async fn handle_stream_text(
     created: i64,
     text: &str,
     is_thinking: bool,
+    thinking_content: &str,
+    thinking_signature: Option<&str>,
+    thinking_signature_sent: &mut bool,
     message_started: &mut bool,
     next_block_index: &mut usize,
     text_block_index: &mut Option<usize>,
@@ -1276,6 +1310,7 @@ pub async fn handle_stream_text(
             if is_thinking {
                 close_content_block(tx, text_block_index).await;
                 if thinking_block_index.is_none() {
+                    *thinking_signature_sent = false;
                     let index = *next_block_index;
                     *next_block_index += 1;
                     *thinking_block_index = Some(index);
@@ -1299,7 +1334,14 @@ pub async fn handle_stream_text(
                 });
                 send_event(tx, Some("content_block_delta"), &data.to_string()).await;
             } else {
-                close_content_block(tx, thinking_block_index).await;
+                close_thinking_block(
+                    tx,
+                    thinking_block_index,
+                    thinking_content,
+                    thinking_signature,
+                    thinking_signature_sent,
+                )
+                .await;
                 if text_block_index.is_none() {
                     let index = *next_block_index;
                     *next_block_index += 1;
@@ -1419,6 +1461,39 @@ pub async fn close_content_block(
         });
         send_event(tx, Some("content_block_stop"), &data.to_string()).await;
     }
+}
+
+pub async fn close_thinking_block(
+    tx: &mpsc::Sender<Result<Bytes, Infallible>>,
+    index: &mut Option<usize>,
+    thinking: &str,
+    signature: Option<&str>,
+    signature_sent: &mut bool,
+) {
+    let Some(current) = index.take() else {
+        return;
+    };
+
+    if !*signature_sent && !thinking.is_empty() {
+        let fallback_signature = build_proxy_thinking_signature(thinking);
+        let signature = signature.unwrap_or(fallback_signature.as_str());
+        let data = json!({
+            "type": "content_block_delta",
+            "index": current,
+            "delta": {
+                "type": "signature_delta",
+                "signature": signature
+            }
+        });
+        send_event(tx, Some("content_block_delta"), &data.to_string()).await;
+        *signature_sent = true;
+    }
+
+    let data = json!({
+        "type": "content_block_stop",
+        "index": current
+    });
+    send_event(tx, Some("content_block_stop"), &data.to_string()).await;
 }
 
 pub async fn send_event(

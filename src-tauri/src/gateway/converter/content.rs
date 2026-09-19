@@ -40,6 +40,11 @@ pub fn assistant_metadata_value(message: &NormalizedMessage, key: &str) -> Optio
 /// - opus-4.7 原生 thinking 会产生有效签名 → 此函数返回 false（保留 reasoningContent）
 /// - 其他模型靠 `<thinking_mode>` 提示词强制思考时签名为空字符串
 ///   → 此函数返回 true（必须从 history 剥掉，否则 400 THINKING_SIGNATURE_INVALID）
+/// - 本代理生成的 `kiro-proxy-v1-*` 签名只对下游 Anthropic 有效，不能回传 Kiro
+pub fn is_proxy_thinking_signature(signature: &str) -> bool {
+    signature.starts_with("kiro-proxy-v1-")
+}
+
 pub fn has_empty_thinking_signature(reasoning_content: &Option<Value>) -> bool {
     let Some(rc) = reasoning_content else {
         return false; // 没有就不需要剥
@@ -52,6 +57,7 @@ pub fn has_empty_thinking_signature(reasoning_content: &Option<Value>) -> bool {
     match signature {
         None => true,     // 缺 signature 字段
         Some("") => true, // 空字符串
+        Some(value) if is_proxy_thinking_signature(value) => true,
         Some(_) => false, // 有值，保留
     }
 }
@@ -96,7 +102,14 @@ pub fn extract_reasoning_content(content: Option<&Value>) -> Option<Value> {
         }
 
         if signature.is_none() {
-            signature = item.get("signature").cloned();
+            let candidate = item.get("signature").cloned();
+            if !candidate
+                .as_ref()
+                .and_then(Value::as_str)
+                .is_some_and(is_proxy_thinking_signature)
+            {
+                signature = candidate;
+            }
         }
         if redacted_content.is_none() {
             redacted_content = item.get("redactedContent").cloned();
