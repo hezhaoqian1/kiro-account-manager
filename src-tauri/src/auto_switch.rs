@@ -364,7 +364,12 @@ async fn resolve_current_account_by_usage(
     };
     let regions = crate::clients::kiro_client::usage_limits_region_candidates(region, false);
     let usage = match client
-        .get_usage_limits_with_region_fallback(access_token, &machine_id, &regions)
+        .get_usage_limits_with_profile_and_region_fallback(
+            access_token,
+            &machine_id,
+            &regions,
+            local_token.profile_arn.as_deref(),
+        )
         .await
     {
         Ok((_region, data)) => data,

@@ -561,7 +561,12 @@ async fn get_usage_by_account_inner(
 
     // getUsageLimits 不带 profileArn；企业号优先账号 region，再回退常见 region
     let (used_region, usage_data) = match client
-        .get_usage_limits_with_region_fallback(access_token, &ctx.machine_id, &regions)
+        .get_usage_limits_with_profile_and_region_fallback(
+            access_token,
+            &ctx.machine_id,
+            &regions,
+            ctx.profile_arn.as_deref(),
+        )
         .await
     {
         Ok(v) => v,

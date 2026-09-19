@@ -395,7 +395,11 @@ pub async fn refresh_token(
         if let Ok(exp) = chrono::NaiveDateTime::parse_from_str(expires_at, "%Y/%m/%d %H:%M:%S") {
             let now = chrono::Local::now().naive_local();
             let remaining = exp.signed_duration_since(now);
-            if remaining.num_minutes() >= 5 {
+            let status_needs_revalidation = matches!(
+                account.status.as_str(),
+                "invalid" | "失效" | "已失效" | "Token已失效"
+            );
+            if remaining.num_minutes() >= 5 && !status_needs_revalidation {
                 return Ok(account);
             }
         }
@@ -1023,6 +1027,8 @@ pub async fn add_local_kiro_account(
             None,                             // password: 本地导入无密码
             None,                             // start_url: 本地导入无 start_url
             Some(hash),                       // client_id_hash: 直接使用 Kiro IDE 提供的
+            local_token.profile_arn.clone(),  // profile_arn: BuilderId usage/profile identity
+            None,                             // usage_data: live API will populate it
         )
         .await
     } else {
@@ -1052,6 +1058,8 @@ pub async fn add_account_by_idc(
     password: Option<String>,
     start_url: Option<String>,
     client_id_hash: Option<String>,
+    profile_arn: Option<String>,
+    usage_data: Option<serde_json::Value>,
 ) -> Result<AddAccountResult, String> {
     // 从参数中获取 provider，默认为 BuilderId
     let provider_id = provider.unwrap_or_else(|| "BuilderId".to_string());
@@ -1074,6 +1082,8 @@ pub async fn add_account_by_idc(
             provider_id,
             start_url,
             client_id_hash,
+            profile_arn,
+            usage_data,
         },
     )
     .await
@@ -1091,6 +1101,8 @@ struct IdcAccountParams {
     provider_id: String,
     start_url: Option<String>,
     client_id_hash: Option<String>,
+    profile_arn: Option<String>,
+    usage_data: Option<serde_json::Value>,
 }
 
 /// 内部函数：添加 `IdC` 账号（BuilderId 或 Enterprise）
@@ -1158,7 +1170,7 @@ async fn add_account_by_idc_internal(
     let (
         final_access_token,
         final_refresh_token,
-        usage_result,
+        mut usage_result,
         expires_at,
         id_token,
         sso_session_id,
@@ -1306,6 +1318,24 @@ async fn add_account_by_idc_internal(
         )
     };
 
+    // Some export tools include a last-known subscription/quota snapshot. If
+    // the live usage endpoint is temporarily unavailable (or the old access
+    // token is expired) keep that snapshot for display instead of silently
+    // turning a known Pro account into an empty Free account. A successful
+    // refresh still supplies the token used by the gateway; the next sync will
+    // replace this snapshot with the live upstream response.
+    let usage_is_empty = usage_result.usage_data.is_null()
+        || usage_result
+            .usage_data
+            .as_object()
+            .is_some_and(|object| object.is_empty());
+    if usage_is_empty && !usage_result.is_banned {
+        if let Some(snapshot) = params.usage_data.clone() {
+            usage_result.usage_data = snapshot;
+            usage_result.is_auth_error = false;
+        }
+    }
+
     // 封禁账号直接报错
     if usage_result.is_banned {
         return Err("BANNED: 账号已被封禁".to_string());
@@ -1436,6 +1466,13 @@ async fn add_account_by_idc_internal(
             existing.client_secret = Some(params.client_secret.clone());
             existing.region = Some(region.clone());
             existing.client_id_hash = client_id_hash.clone(); // 可能是 None
+            if params
+                .profile_arn
+                .as_deref()
+                .is_some_and(|value| !value.trim().is_empty())
+            {
+                existing.profile_arn = params.profile_arn.clone();
+            }
             if existing
                 .machine_id
                 .as_ref()
@@ -1474,6 +1511,7 @@ async fn add_account_by_idc_internal(
             account.client_secret = Some(params.client_secret.clone());
             account.region = Some(region.clone());
             account.client_id_hash = client_id_hash; // 可能是 None
+            account.profile_arn = params.profile_arn.clone();
             account.id_token = id_token;
             account.sso_session_id = sso_session_id;
             account.usage_data = Some(usage_result.usage_data);

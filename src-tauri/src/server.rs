@@ -17,16 +17,20 @@ use kiro_account_manager::{
     clients::kiro_auth_client::KiroAuthServiceClient,
     commands::{
         account_cmd::{self, UpdateAccountParams},
+        app_data_cmd,
         app_settings_cmd::{self, AppSettings},
-        auth_cmd,
-        cache_cmd,
+        auth_cmd, cache_cmd,
         common::{
             find_existing_account_idx, generate_account_machine_id,
             get_usage_by_provider_with_machine_id, lock_store, save_store, update_account_status,
         },
-        gateway_cmd,
+        custom_agents_cmd, gateway_cmd, hooks_cmd, kiro_settings_cmd, mcp_cmd, permissions_cmd,
+        proxy_cmd, skills_cmd, specs_cmd, steering_cmd, workflows_cmd,
     },
-    core::{self, account::{Account, AccountStore}},
+    core::{
+        self,
+        account::{Account, AccountStore},
+    },
     gateway::{self, GatewayConfig},
     server_db::DatabaseStore,
     state::{AppState, PendingLogin},
@@ -72,9 +76,13 @@ fn token_matches(provided: &str, expected: &str) -> bool {
 fn require_admin(headers: &HeaderMap, ctx: &ServerContext) -> Result<(), Response> {
     match bearer(headers) {
         Some(token) if token_matches(token, ctx.admin_token.as_str()) => Ok(()),
-        _ => Err((StatusCode::UNAUTHORIZED, Json(json!({
-            "error": { "type": "authentication_error", "message": "管理员令牌无效" }
-        }))).into_response()),
+        _ => Err((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "error": { "type": "authentication_error", "message": "管理员令牌无效" }
+            })),
+        )
+            .into_response()),
     }
 }
 
@@ -82,9 +90,7 @@ fn tauri_state(ctx: &ServerContext) -> TauriState<'_, AppState> {
     ctx.handle.state::<AppState>()
 }
 
-async fn healthz(
-    Extension(ctx): Extension<ServerContext>,
-) -> Response {
+async fn healthz(Extension(ctx): Extension<ServerContext>) -> Response {
     if let Err(error) = ctx.db.ping().await {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
@@ -143,11 +149,7 @@ async fn invoke(
     }
     match result {
         Ok(value) => json_result(value).unwrap_or_else(|response| response),
-        Err(error) => (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": error })),
-        )
-            .into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response(),
     }
 }
 
@@ -192,12 +194,22 @@ async fn dispatch_command(
         "cancel_kiro_login" => Ok(json!(auth_cmd::cancel_kiro_login(state))),
 
         "get_accounts" => Ok(json!(account_cmd::get_accounts(state))),
+        "get_available_accounts" => Ok(json!(account_cmd::get_available_accounts(state))),
+        "get_accounts_by_group" => Ok(json!(account_cmd::get_accounts_by_group(
+            state,
+            arg_string(&args, "groupId")?,
+        ))),
+        "get_accounts_by_tag" => Ok(json!(account_cmd::get_accounts_by_tag(
+            state,
+            arg_string(&args, "tagId")?,
+        ))),
         "add_account_by_social" => account_cmd::add_account_by_social(
             state,
             required_string(&args, "refreshToken", "refresh_token")?,
             optional_string(&args, "provider"),
             optional_string(&args, "machineId").or_else(|| optional_string(&args, "machine_id")),
-            optional_string(&args, "accessToken").or_else(|| optional_string(&args, "access_token")),
+            optional_string(&args, "accessToken")
+                .or_else(|| optional_string(&args, "access_token")),
         )
         .await
         .map(|result| json!(result)),
@@ -209,10 +221,16 @@ async fn dispatch_command(
             required_string(&args, "clientSecret", "client_secret")?,
             optional_string(&args, "region"),
             optional_string(&args, "machineId").or_else(|| optional_string(&args, "machine_id")),
-            optional_string(&args, "accessToken").or_else(|| optional_string(&args, "access_token")),
+            optional_string(&args, "accessToken")
+                .or_else(|| optional_string(&args, "access_token")),
             optional_string(&args, "password"),
             optional_string(&args, "startUrl").or_else(|| optional_string(&args, "start_url")),
-            optional_string(&args, "clientIdHash").or_else(|| optional_string(&args, "client_id_hash")),
+            optional_string(&args, "clientIdHash")
+                .or_else(|| optional_string(&args, "client_id_hash")),
+            optional_string(&args, "profileArn").or_else(|| optional_string(&args, "profile_arn")),
+            args.get("usageData")
+                .or_else(|| args.get("usage_data"))
+                .cloned(),
         )
         .await
         .map(|result| json!(result)),
@@ -221,9 +239,12 @@ async fn dispatch_command(
             required_string(&args, "refreshToken", "refresh_token")?,
             required_string(&args, "clientId", "client_id")?,
             required_string(&args, "profileArn", "profile_arn")?,
-            optional_string(&args, "clientSecret").or_else(|| optional_string(&args, "client_secret")),
-            optional_string(&args, "accessToken").or_else(|| optional_string(&args, "access_token")),
-            optional_string(&args, "tokenEndpoint").or_else(|| optional_string(&args, "token_endpoint")),
+            optional_string(&args, "clientSecret")
+                .or_else(|| optional_string(&args, "client_secret")),
+            optional_string(&args, "accessToken")
+                .or_else(|| optional_string(&args, "access_token")),
+            optional_string(&args, "tokenEndpoint")
+                .or_else(|| optional_string(&args, "token_endpoint")),
             optional_string(&args, "issuerUrl").or_else(|| optional_string(&args, "issuer_url")),
             optional_string(&args, "scopes"),
             optional_string(&args, "region"),
@@ -242,7 +263,10 @@ async fn dispatch_command(
             }
         }
         "export_accounts" => {
-            let ids = args.get("ids").cloned().and_then(|value| serde_json::from_value(value).ok());
+            let ids = args
+                .get("ids")
+                .cloned()
+                .and_then(|value| serde_json::from_value(value).ok());
             Ok(json!(account_cmd::export_accounts(state, ids)))
         }
         "delete_account" => {
@@ -252,17 +276,52 @@ async fn dispatch_command(
                 .ok_or_else(|| "删除账号失败".to_string())
         }
         "delete_accounts" => {
-            let ids: Vec<String> = serde_json::from_value(args.get("ids").cloned().unwrap_or_default()).map_err(|e| e.to_string())?;
+            let ids: Vec<String> =
+                serde_json::from_value(args.get("ids").cloned().unwrap_or_default())
+                    .map_err(|e| e.to_string())?;
             Ok(json!(account_cmd::delete_accounts(state, ids)))
         }
+        "delete_account_remote" => account_cmd::delete_account_remote(
+            state,
+            arg_string(&args, "id")?,
+            args.get("deleteLocal")
+                .or_else(|| args.get("delete_local"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        )
+        .await
+        .map(|result| json!(result)),
         "update_account" => {
-            let params: UpdateAccountParams = serde_json::from_value(args.get("params").cloned().unwrap_or(args.clone())).map_err(|e| e.to_string())?;
+            let params: UpdateAccountParams =
+                serde_json::from_value(args.get("params").cloned().unwrap_or(args.clone()))
+                    .map_err(|e| e.to_string())?;
             account_cmd::update_account(state, params).map(|account| json!(account))
         }
-        "refresh_token" => account_cmd::refresh_token(state, arg_string(&args, "id")?).await.map(|account| json!(account)),
-        "sync_account" => account_cmd::sync_account(state, arg_string(&args, "id")?).await.map(|result| json!(result)),
-        "get_usage_limits" => account_cmd::get_usage_limits(state, arg_string(&args, "id")?).await.map(|result| json!(result)),
-        "set_overage_status" => account_cmd::set_overage_status(state, arg_string(&args, "id")?, args.get("enabled").and_then(Value::as_bool).unwrap_or(false)).await.map(|result| json!(result)),
+        "refresh_token" => account_cmd::refresh_token(state, arg_string(&args, "id")?)
+            .await
+            .map(|account| json!(account)),
+        "sync_account" => account_cmd::sync_account(state, arg_string(&args, "id")?)
+            .await
+            .map(|result| json!(result)),
+        "get_usage_limits" => account_cmd::get_usage_limits(state, arg_string(&args, "id")?)
+            .await
+            .map(|result| json!(result)),
+        "get_account_usage" => account_cmd::get_account_usage(
+            required_string(&args, "accessToken", "access_token")?,
+            optional_string(&args, "provider"),
+            optional_string(&args, "machineId").or_else(|| optional_string(&args, "machine_id")),
+        )
+        .await
+        .map(|result| json!(result)),
+        "set_overage_status" => account_cmd::set_overage_status(
+            state,
+            arg_string(&args, "id")?,
+            args.get("enabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        )
+        .await
+        .map(|result| json!(result)),
         "list_available_models" => account_cmd::list_available_models_for_state(
             &state,
             arg_string(&args, "id")?,
@@ -272,50 +331,617 @@ async fn dispatch_command(
         )
         .await
         .map(|result| json!(result)),
-        "check_token_status" => account_cmd::check_token_status(state, arg_string(&args, "id")?).map(|result| json!(result)),
-        "check_all_tokens_status" => account_cmd::check_all_tokens_status(state).map(|result| json!(result)),
-        "refresh_all_expiring_tokens" => account_cmd::refresh_all_expiring_tokens(state, args.get("onlyExpiring").and_then(Value::as_bool), args.get("maxConcurrent").and_then(Value::as_u64).map(|value| value as usize)).await.map(|result| json!(result)),
+        "check_token_status" => account_cmd::check_token_status(state, arg_string(&args, "id")?)
+            .map(|result| json!(result)),
+        "check_all_tokens_status" => {
+            account_cmd::check_all_tokens_status(state).map(|result| json!(result))
+        }
+        "refresh_all_expiring_tokens" => account_cmd::refresh_all_expiring_tokens(
+            state,
+            args.get("onlyExpiring").and_then(Value::as_bool),
+            args.get("maxConcurrent")
+                .and_then(Value::as_u64)
+                .map(|value| value as usize),
+        )
+        .await
+        .map(|result| json!(result)),
+        "verify_account" => {
+            let params =
+                serde_json::from_value(args.get("params").cloned().unwrap_or(args.clone()))
+                    .map_err(|error| error.to_string())?;
+            account_cmd::verify_account(state, params)
+                .await
+                .map(|result| json!(result))
+        }
 
         "get_gateway_config" => gateway::get_gateway_config().map(|config| json!(config)),
         "save_gateway_config" => {
-            let config: GatewayConfig = serde_json::from_value(args.get("config").cloned().unwrap_or(args.clone())).map_err(|e| e.to_string())?;
+            let config: GatewayConfig =
+                serde_json::from_value(args.get("config").cloned().unwrap_or(args.clone()))
+                    .map_err(|e| e.to_string())?;
             gateway::save_gateway_config(&config).map(|_| Value::Null)
         }
         "start_gateway" => {
-            let config: GatewayConfig = serde_json::from_value(args.get("config").cloned().unwrap_or(args.clone())).map_err(|e| e.to_string())?;
-            gateway_cmd::start_gateway(state, config).await.map(|status| json!(status))
+            let config: GatewayConfig =
+                serde_json::from_value(args.get("config").cloned().unwrap_or(args.clone()))
+                    .map_err(|e| e.to_string())?;
+            gateway_cmd::start_gateway(state, config)
+                .await
+                .map(|status| json!(status))
         }
         "stop_gateway" => gateway_cmd::stop_gateway(state).await.map(|_| Value::Null),
-        "get_gateway_status" => gateway_cmd::get_gateway_status(state).await.map(|status| json!(status)),
-        "get_gateway_request_logs" => gateway_cmd::get_gateway_request_logs(state, args.get("limit").and_then(Value::as_u64).map(|v| v as usize)).await.map(|logs| json!(logs)),
-        "get_gateway_request_stats" => gateway_cmd::get_gateway_request_stats(state).await.map(|stats| json!(stats)),
-        "get_gateway_model_stats" => gateway_cmd::get_gateway_model_stats(state).await.map(|stats| json!(stats)),
-        "get_gateway_endpoint_stats" => gateway_cmd::get_gateway_endpoint_stats(state).await.map(|stats| json!(stats)),
-        "clear_gateway_request_logs" => gateway_cmd::clear_gateway_request_logs(state).await.map(|_| Value::Null),
-        "get_all_account_health" => gateway_cmd::get_all_account_health(state).await.map(|health| json!(health)),
-        "reset_account_health" => gateway_cmd::reset_account_health(state, arg_string(&args, "accountId")?).await.map(|_| Value::Null),
-        "get_rate_limited_accounts" => gateway_cmd::get_rate_limited_accounts(state).await.map(|accounts| json!(accounts)),
-        "clear_rate_limit_account" => gateway_cmd::clear_rate_limit_account(state, arg_string(&args, "accountId")?).await.map(|_| Value::Null),
-        "cleanup_stale_health" => gateway_cmd::cleanup_stale_health(state).await.map(|_| Value::Null),
+        "get_gateway_status" => gateway_cmd::get_gateway_status(state)
+            .await
+            .map(|status| json!(status)),
+        "get_gateway_log_dir" => gateway_cmd::get_gateway_log_dir(ctx.handle.clone())
+            .await
+            .map(|path| json!(path)),
+        // A Railway process cannot open a folder on the user's desktop. Return
+        // the persistent log path so the web UI can display/copy it instead.
+        "open_gateway_log_dir" => gateway_cmd::get_gateway_log_dir(ctx.handle.clone())
+            .await
+            .map(|path| json!(path)),
+        "get_gateway_request_logs" => gateway_cmd::get_gateway_request_logs(
+            state,
+            args.get("limit")
+                .and_then(Value::as_u64)
+                .map(|v| v as usize),
+        )
+        .await
+        .map(|logs| json!(logs)),
+        "get_gateway_request_stats" => gateway_cmd::get_gateway_request_stats(state)
+            .await
+            .map(|stats| json!(stats)),
+        "get_gateway_model_stats" => gateway_cmd::get_gateway_model_stats(state)
+            .await
+            .map(|stats| json!(stats)),
+        "get_gateway_endpoint_stats" => gateway_cmd::get_gateway_endpoint_stats(state)
+            .await
+            .map(|stats| json!(stats)),
+        "clear_gateway_request_logs" => gateway_cmd::clear_gateway_request_logs(state)
+            .await
+            .map(|_| Value::Null),
+        "get_all_account_health" => gateway_cmd::get_all_account_health(state)
+            .await
+            .map(|health| json!(health)),
+        "reset_account_health" => {
+            gateway_cmd::reset_account_health(state, arg_string(&args, "accountId")?)
+                .await
+                .map(|_| Value::Null)
+        }
+        "get_rate_limited_accounts" => gateway_cmd::get_rate_limited_accounts(state)
+            .await
+            .map(|accounts| json!(accounts)),
+        "clear_rate_limit_account" => {
+            gateway_cmd::clear_rate_limit_account(state, arg_string(&args, "accountId")?)
+                .await
+                .map(|_| Value::Null)
+        }
+        "cleanup_stale_health" => gateway_cmd::cleanup_stale_health(state)
+            .await
+            .map(|_| Value::Null),
+        "get_banned_accounts" => gateway_cmd::get_banned_accounts(state)
+            .await
+            .map(|accounts| json!(accounts)),
+        "test_route_config" => {
+            let config: GatewayConfig =
+                serde_json::from_value(args.get("config").cloned().unwrap_or(args.clone()))
+                    .map_err(|error| error.to_string())?;
+            gateway_cmd::test_route_config(state, config)
+                .await
+                .map(|result| json!(result))
+        }
+        "configure_proxy_clients" => {
+            let clients = args
+                .get("clients")
+                .and_then(Value::as_array)
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(ToOwned::to_owned)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            Ok(json!(clients
+                .into_iter()
+                .map(|client| json!({
+                    "client": client,
+                    "success": false,
+                    "paths": [],
+                    "error": "Railway Web 模式不能写入调用方本机配置，请手动使用网关 URL 和 API Key"
+                }))
+                .collect::<Vec<_>>()))
+        }
         "get_available_models" => Ok(json!(gateway_cmd::get_available_models())),
-        "get_cache_stats" => cache_cmd::get_cache_stats(state).await.map(|stats| json!(stats)),
+        "get_cache_stats" => cache_cmd::get_cache_stats(state)
+            .await
+            .map(|stats| json!(stats)),
         "clear_all_cache" => cache_cmd::clear_all_cache(state).await.map(|_| Value::Null),
-        "clear_session_cache" => cache_cmd::clear_session_cache(state, arg_string(&args, "sessionId")?).await.map(|_| Value::Null),
-        "cleanup_expired_cache" => cache_cmd::cleanup_expired_cache(state).await.map(|count| json!(count)),
+        "clear_session_cache" => {
+            cache_cmd::clear_session_cache(state, arg_string(&args, "sessionId")?)
+                .await
+                .map(|_| Value::Null)
+        }
+        "cleanup_expired_cache" => cache_cmd::cleanup_expired_cache(state)
+            .await
+            .map(|count| json!(count)),
 
-        "get_app_settings" => app_settings_cmd::get_app_settings().await.map(|settings| json!(settings)),
+        "detect_system_proxy" => proxy_cmd::detect_system_proxy()
+            .await
+            .map(|result| json!(result)),
+        "test_account_proxy" => {
+            let proxy_config = serde_json::from_value(
+                args.get("proxyConfig")
+                    .or_else(|| args.get("proxy_config"))
+                    .cloned()
+                    .unwrap_or(args.clone()),
+            )
+            .map_err(|error| error.to_string())?;
+            proxy_cmd::test_account_proxy(proxy_config)
+                .await
+                .map(|result| json!(result))
+        }
+
+        "get_app_settings" => app_settings_cmd::get_app_settings()
+            .await
+            .map(|settings| json!(settings)),
         "save_app_settings" => {
-            let settings: AppSettings = serde_json::from_value(args.get("settings").cloned().unwrap_or(args.clone())).map_err(|e| e.to_string())?;
-            app_settings_cmd::save_app_settings(settings).await.map(|_| Value::Null)
+            let settings: AppSettings =
+                serde_json::from_value(args.get("settings").cloned().unwrap_or(args.clone()))
+                    .map_err(|e| e.to_string())?;
+            app_settings_cmd::save_app_settings(settings)
+                .await
+                .map(|_| Value::Null)
         }
-        "get_usage_history" => app_settings_cmd::get_usage_history().await.map(|history| json!(history)),
+        "get_usage_history" => app_settings_cmd::get_usage_history()
+            .await
+            .map(|history| json!(history)),
         "save_usage_history_entry" => {
-            let entry: app_settings_cmd::UsageHistoryEntry = serde_json::from_value(args.clone()).map_err(|e| e.to_string())?;
-            app_settings_cmd::save_usage_history_entry(entry).await.map(|_| Value::Null)
+            let entry: app_settings_cmd::UsageHistoryEntry =
+                serde_json::from_value(args.get("entry").cloned().unwrap_or(args.clone()))
+                    .map_err(|e| e.to_string())?;
+            app_settings_cmd::save_usage_history_entry(entry)
+                .await
+                .map(|_| Value::Null)
+        }
+        "get_app_data_dir" => {
+            app_data_cmd::get_app_data_dir(ctx.handle.clone()).map(|path| json!(path))
+        }
+        "open_app_data_dir" => Ok(json!(core::paths::app_data_dir_or_default()
+            .display()
+            .to_string())),
+        "get_custom_kiro_path" => app_settings_cmd::get_custom_kiro_path()
+            .await
+            .map(|path| json!(path)),
+        "set_custom_kiro_path" => {
+            app_settings_cmd::set_custom_kiro_path(arg_string(&args, "path")?)
+                .await
+                .map(|_| Value::Null)
+        }
+        "clear_custom_kiro_path" => app_settings_cmd::clear_custom_kiro_path()
+            .await
+            .map(|_| Value::Null),
+        "open_kiro_settings_file" => {
+            Err("Railway 无头服务没有本机 Kiro 设置文件；请通过管理 API 修改服务端设置".to_string())
         }
 
-        "get_groups" => Ok(json!(kiro_account_manager::commands::group_tag_cmd::get_groups(state))),
-        "get_tags" => Ok(json!(kiro_account_manager::commands::group_tag_cmd::get_tags(state))),
+        "get_kiro_settings" => kiro_settings_cmd::get_kiro_settings()
+            .await
+            .map(|settings| json!(settings)),
+        "set_kiro_proxy" => kiro_settings_cmd::set_kiro_proxy(arg_string(&args, "proxy")?)
+            .await
+            .map(|_| Value::Null),
+        "set_kiro_model" => kiro_settings_cmd::set_kiro_model(arg_string(&args, "model")?)
+            .await
+            .map(|_| Value::Null),
+        "set_kiro_codebase_indexing" => kiro_settings_cmd::set_kiro_codebase_indexing(
+            args.get("enabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        )
+        .await
+        .map(|_| Value::Null),
+        "set_kiro_agent_autonomy" => {
+            kiro_settings_cmd::set_kiro_agent_autonomy(arg_string(&args, "autonomy")?)
+                .await
+                .map(|_| Value::Null)
+        }
+        "set_kiro_tab_autocomplete" => kiro_settings_cmd::set_kiro_tab_autocomplete(
+            args.get("enabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        )
+        .await
+        .map(|_| Value::Null),
+        "set_kiro_usage_summary" => kiro_settings_cmd::set_kiro_usage_summary(
+            args.get("enabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        )
+        .await
+        .map(|_| Value::Null),
+        "set_kiro_debug_logs" => kiro_settings_cmd::set_kiro_debug_logs(
+            args.get("enabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        )
+        .await
+        .map(|_| Value::Null),
+        "set_kiro_notification" => kiro_settings_cmd::set_kiro_notification(
+            arg_string(&args, "key")?,
+            args.get("enabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        )
+        .await
+        .map(|_| Value::Null),
+        "set_kiro_reference_tracker" => kiro_settings_cmd::set_kiro_reference_tracker(
+            args.get("enabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        )
+        .await
+        .map(|_| Value::Null),
+        "set_kiro_configure_mcp" => {
+            kiro_settings_cmd::set_kiro_configure_mcp(arg_string(&args, "mode")?)
+                .await
+                .map(|_| Value::Null)
+        }
+        "set_kiro_telemetry" => kiro_settings_cmd::set_kiro_telemetry(
+            arg_string(&args, "key")?,
+            args.get("enabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        )
+        .await
+        .map(|_| Value::Null),
+        "set_kiro_agent_setting" => kiro_settings_cmd::set_kiro_agent_setting(
+            arg_string(&args, "key")?,
+            args.get("value").cloned().unwrap_or(Value::Null),
+        )
+        .await
+        .map(|_| Value::Null),
+
+        "get_permissions" => permissions_cmd::get_permissions(
+            optional_string(&args, "scope"),
+            optional_string(&args, "projectPath")
+                .or_else(|| optional_string(&args, "project_path")),
+        )
+        .await
+        .map(|policy| json!(policy)),
+        "save_permissions" => {
+            let policy =
+                serde_json::from_value(args.get("policy").cloned().ok_or("缺少参数: policy")?)
+                    .map_err(|error| error.to_string())?;
+            permissions_cmd::save_permissions(
+                policy,
+                optional_string(&args, "scope"),
+                optional_string(&args, "projectPath")
+                    .or_else(|| optional_string(&args, "project_path")),
+            )
+            .await
+            .map(|_| Value::Null)
+        }
+        "get_permission_capabilities" => permissions_cmd::get_permission_capabilities()
+            .await
+            .map(|value| json!(value)),
+        "list_permission_workspace_roots" => permissions_cmd::list_permission_workspace_roots()
+            .await
+            .map(|value| json!(value)),
+
+        "get_mcp_config" => mcp_cmd::get_mcp_config(
+            optional_string(&args, "projectDir").or_else(|| optional_string(&args, "project_dir")),
+        )
+        .await
+        .map(|value| json!(value)),
+        "get_mcp_tool_stats" => mcp_cmd::get_mcp_tool_stats(
+            optional_string(&args, "projectDir").or_else(|| optional_string(&args, "project_dir")),
+        )
+        .await
+        .map(|value| json!(value)),
+        "save_mcp_server" => {
+            let config =
+                serde_json::from_value(args.get("config").cloned().ok_or("缺少参数: config")?)
+                    .map_err(|error| error.to_string())?;
+            mcp_cmd::save_mcp_server(
+                arg_string(&args, "name")?,
+                config,
+                optional_string(&args, "projectDir")
+                    .or_else(|| optional_string(&args, "project_dir")),
+            )
+            .await
+            .map(|_| Value::Null)
+        }
+        "delete_mcp_server" => mcp_cmd::delete_mcp_server(
+            arg_string(&args, "name")?,
+            optional_string(&args, "projectDir").or_else(|| optional_string(&args, "project_dir")),
+        )
+        .await
+        .map(|_| Value::Null),
+        "toggle_mcp_server" => mcp_cmd::toggle_mcp_server(
+            arg_string(&args, "name")?,
+            args.get("disabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            optional_string(&args, "projectDir").or_else(|| optional_string(&args, "project_dir")),
+        )
+        .await
+        .map(|_| Value::Null),
+
+        // Web administration can manage the same Kiro project files as the
+        // desktop UI. The managers themselves enforce path and file rules.
+        "get_custom_agents" => custom_agents_cmd::get_custom_agents(project_dir(&args))
+            .await
+            .map(|v| json!(v)),
+        "get_custom_agent" => custom_agents_cmd::get_custom_agent(
+            arg_string(&args, "fileName")?,
+            optional_string(&args, "scope"),
+            project_dir(&args),
+        )
+        .await
+        .map(|v| json!(v)),
+        "save_custom_agent" => custom_agents_cmd::save_custom_agent(
+            arg_string(&args, "fileName")?,
+            arg_string(&args, "content")?,
+            optional_string(&args, "scope"),
+            project_dir(&args),
+        )
+        .await
+        .map(|_| Value::Null),
+        "delete_custom_agent" => custom_agents_cmd::delete_custom_agent(
+            arg_string(&args, "fileName")?,
+            optional_string(&args, "scope"),
+            project_dir(&args),
+        )
+        .await
+        .map(|_| Value::Null),
+        "create_custom_agent" => custom_agents_cmd::create_custom_agent(
+            arg_string(&args, "fileName")?,
+            arg_string(&args, "content")?,
+            optional_string(&args, "scope"),
+            project_dir(&args),
+        )
+        .await
+        .map(|v| json!(v)),
+
+        "get_hooks" => hooks_cmd::get_hooks(project_dir(&args))
+            .await
+            .map(|v| json!(v)),
+        "get_hook" => hooks_cmd::get_hook(
+            arg_string(&args, "fileName")?,
+            optional_string(&args, "scope"),
+            project_dir(&args),
+        )
+        .await
+        .map(|v| json!(v)),
+        "save_hook" => hooks_cmd::save_hook(
+            arg_string(&args, "fileName")?,
+            arg_string(&args, "content")?,
+            optional_string(&args, "scope"),
+            project_dir(&args),
+        )
+        .await
+        .map(|_| Value::Null),
+        "delete_hook" => hooks_cmd::delete_hook(
+            arg_string(&args, "fileName")?,
+            optional_string(&args, "scope"),
+            project_dir(&args),
+        )
+        .await
+        .map(|_| Value::Null),
+        "create_hook" => hooks_cmd::create_hook(
+            arg_string(&args, "fileName")?,
+            arg_string(&args, "content")?,
+            optional_string(&args, "scope"),
+            project_dir(&args),
+        )
+        .await
+        .map(|v| json!(v)),
+
+        "get_skills" => skills_cmd::get_skills(project_dir(&args))
+            .await
+            .map(|v| json!(v)),
+        "get_skill" => skills_cmd::get_skill(
+            arg_string(&args, "name")?,
+            optional_string(&args, "scope"),
+            project_dir(&args),
+        )
+        .await
+        .map(|v| json!(v)),
+        "save_skill" => skills_cmd::save_skill(
+            arg_string(&args, "name")?,
+            arg_string(&args, "content")?,
+            optional_string(&args, "scope"),
+            project_dir(&args),
+        )
+        .await
+        .map(|_| Value::Null),
+        "delete_skill" => skills_cmd::delete_skill(
+            arg_string(&args, "name")?,
+            optional_string(&args, "scope"),
+            project_dir(&args),
+        )
+        .await
+        .map(|_| Value::Null),
+        "create_skill" => skills_cmd::create_skill(
+            arg_string(&args, "name")?,
+            arg_string(&args, "content")?,
+            optional_string(&args, "scope"),
+            project_dir(&args),
+        )
+        .await
+        .map(|v| json!(v)),
+        "import_skill_local" => skills_cmd::import_skill_local(
+            arg_string(&args, "sourcePath")?,
+            optional_string(&args, "targetName"),
+            optional_string(&args, "scope"),
+            project_dir(&args),
+            args.get("overwrite").and_then(Value::as_bool),
+        )
+        .await
+        .map(|v| json!(v)),
+        "import_skill_from_github" => skills_cmd::import_skill_from_github(
+            arg_string(&args, "repoUrl")?,
+            optional_string(&args, "pathInRepo"),
+            optional_string(&args, "branch"),
+            optional_string(&args, "targetName"),
+            optional_string(&args, "scope"),
+            project_dir(&args),
+            args.get("overwrite").and_then(Value::as_bool),
+        )
+        .await
+        .map(|v| json!(v)),
+
+        "get_steering_files" => steering_cmd::get_steering_files(project_dir(&args))
+            .await
+            .map(|v| json!(v)),
+        "get_steering_file" => steering_cmd::get_steering_file(
+            arg_string(&args, "fileName")?,
+            optional_string(&args, "scope"),
+            project_dir(&args),
+        )
+        .await
+        .map(|v| json!(v)),
+        "save_steering_file" => steering_cmd::save_steering_file(
+            arg_string(&args, "fileName")?,
+            arg_string(&args, "content")?,
+            optional_string(&args, "scope"),
+            project_dir(&args),
+        )
+        .await
+        .map(|_| Value::Null),
+        "delete_steering_file" => steering_cmd::delete_steering_file(
+            arg_string(&args, "fileName")?,
+            optional_string(&args, "scope"),
+            project_dir(&args),
+        )
+        .await
+        .map(|_| Value::Null),
+        "create_steering_file" => steering_cmd::create_steering_file(
+            arg_string(&args, "fileName")?,
+            arg_string(&args, "content")?,
+            optional_string(&args, "scope"),
+            project_dir(&args),
+        )
+        .await
+        .map(|v| json!(v)),
+        "create_default_steering_file" => steering_cmd::create_default_steering_file(
+            optional_string(&args, "fileName"),
+            optional_string(&args, "scope"),
+            project_dir(&args),
+        )
+        .await
+        .map(|v| json!(v)),
+        "create_initial_project_steering" => {
+            steering_cmd::create_initial_project_steering(arg_string(&args, "projectDir")?)
+                .await
+                .map(|v| json!(v))
+        }
+        "refine_steering_file" => steering_cmd::refine_steering_file(
+            arg_string(&args, "fileName")?,
+            optional_string(&args, "scope"),
+            project_dir(&args),
+        )
+        .await
+        .map(|v| json!(v)),
+        "scan_agents_md" => steering_cmd::scan_agents_md(arg_string(&args, "projectDir")?)
+            .await
+            .map(|v| json!(v)),
+        "list_agents_md_ignore_files" => {
+            steering_cmd::list_agents_md_ignore_files(arg_string(&args, "projectDir")?)
+                .await
+                .map(|v| json!(v))
+        }
+        "get_agents_md" => steering_cmd::get_agents_md(
+            arg_string(&args, "projectDir")?,
+            arg_string(&args, "relPath")?,
+        )
+        .await
+        .map(|v| json!(v)),
+        "save_agents_md" => steering_cmd::save_agents_md(
+            arg_string(&args, "projectDir")?,
+            arg_string(&args, "relPath")?,
+            arg_string(&args, "content")?,
+        )
+        .await
+        .map(|_| Value::Null),
+
+        "list_specs" => specs_cmd::list_specs(arg_string(&args, "scope")?, project_dir(&args))
+            .await
+            .map(|v| json!(v)),
+        "read_spec" => specs_cmd::read_spec(
+            arg_string(&args, "scope")?,
+            project_dir(&args),
+            arg_string(&args, "name")?,
+        )
+        .await
+        .map(|v| json!(v)),
+        "save_spec_file" => specs_cmd::save_spec_file(
+            arg_string(&args, "scope")?,
+            project_dir(&args),
+            arg_string(&args, "name")?,
+            arg_string(&args, "fileKind")?,
+            arg_string(&args, "content")?,
+        )
+        .await
+        .map(|_| Value::Null),
+        "create_spec" => specs_cmd::create_spec(
+            arg_string(&args, "scope")?,
+            project_dir(&args),
+            arg_string(&args, "name")?,
+        )
+        .await
+        .map(|_| Value::Null),
+        "delete_spec" => specs_cmd::delete_spec(
+            arg_string(&args, "scope")?,
+            project_dir(&args),
+            arg_string(&args, "name")?,
+        )
+        .await
+        .map(|_| Value::Null),
+
+        "list_workflows" => {
+            workflows_cmd::list_workflows(arg_string(&args, "scope")?, project_dir(&args))
+                .await
+                .map(|v| json!(v))
+        }
+        "read_workflow" => workflows_cmd::read_workflow(
+            arg_string(&args, "scope")?,
+            project_dir(&args),
+            arg_string(&args, "fileName")?,
+        )
+        .await
+        .map(|v| json!(v)),
+        "save_workflow" => workflows_cmd::save_workflow(
+            arg_string(&args, "scope")?,
+            project_dir(&args),
+            arg_string(&args, "fileName")?,
+            arg_string(&args, "content")?,
+        )
+        .await
+        .map(|_| Value::Null),
+        "create_workflow" => workflows_cmd::create_workflow(
+            arg_string(&args, "scope")?,
+            project_dir(&args),
+            arg_string(&args, "fileName")?,
+        )
+        .await
+        .map(|_| Value::Null),
+        "delete_workflow" => workflows_cmd::delete_workflow(
+            arg_string(&args, "scope")?,
+            project_dir(&args),
+            arg_string(&args, "fileName")?,
+        )
+        .await
+        .map(|_| Value::Null),
+
+        "get_groups" => Ok(json!(
+            kiro_account_manager::commands::group_tag_cmd::get_groups(state)
+        )),
+        "get_tags" => Ok(json!(
+            kiro_account_manager::commands::group_tag_cmd::get_tags(state)
+        )),
         "add_group" => kiro_account_manager::commands::group_tag_cmd::add_group(
             state,
             arg_string(&args, "name")?,
@@ -329,14 +955,19 @@ async fn dispatch_command(
             optional_string(&args, "color"),
         )
         .map(|result| json!(result)),
-        "delete_group" => Ok(json!(kiro_account_manager::commands::group_tag_cmd::delete_group(
-            state,
-            arg_string(&args, "id")?.as_str(),
-        ))),
+        "delete_group" => Ok(json!(
+            kiro_account_manager::commands::group_tag_cmd::delete_group(
+                state,
+                arg_string(&args, "id")?.as_str(),
+            )
+        )),
         "reorder_groups" => {
-            let ids: Vec<String> = serde_json::from_value(args.get("ids").cloned().unwrap_or_default())
-                .map_err(|error| error.to_string())?;
-            Ok(json!(kiro_account_manager::commands::group_tag_cmd::reorder_groups(state, ids)))
+            let ids: Vec<String> =
+                serde_json::from_value(args.get("ids").cloned().unwrap_or_default())
+                    .map_err(|error| error.to_string())?;
+            Ok(json!(
+                kiro_account_manager::commands::group_tag_cmd::reorder_groups(state, ids)
+            ))
         }
         "add_tag" => kiro_account_manager::commands::group_tag_cmd::add_tag(
             state,
@@ -351,14 +982,18 @@ async fn dispatch_command(
             optional_string(&args, "color"),
         )
         .map(|result| json!(result)),
-        "delete_tag" => Ok(json!(kiro_account_manager::commands::group_tag_cmd::delete_tag(
-            state,
-            arg_string(&args, "id")?.as_str(),
-        ))),
+        "delete_tag" => Ok(json!(
+            kiro_account_manager::commands::group_tag_cmd::delete_tag(
+                state,
+                arg_string(&args, "id")?.as_str(),
+            )
+        )),
         "set_account_group" => kiro_account_manager::commands::group_tag_cmd::set_account_group(
             state,
             arg_string(&args, "accountId")?.as_str(),
-            args.get("groupId").and_then(Value::as_str).map(ToOwned::to_owned),
+            args.get("groupId")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned),
         )
         .map(|_| Value::Null),
         "add_tag_to_account" => kiro_account_manager::commands::group_tag_cmd::add_tag_to_account(
@@ -367,15 +1002,18 @@ async fn dispatch_command(
             arg_string(&args, "tagId")?.as_str(),
         )
         .map(|_| Value::Null),
-        "remove_tag_from_account" => kiro_account_manager::commands::group_tag_cmd::remove_tag_from_account(
-            state,
-            arg_string(&args, "accountId")?.as_str(),
-            arg_string(&args, "tagId")?.as_str(),
-        )
-        .map(|_| Value::Null),
+        "remove_tag_from_account" => {
+            kiro_account_manager::commands::group_tag_cmd::remove_tag_from_account(
+                state,
+                arg_string(&args, "accountId")?.as_str(),
+                arg_string(&args, "tagId")?.as_str(),
+            )
+            .map(|_| Value::Null)
+        }
         "set_account_tags" => {
-            let tag_ids: Vec<String> = serde_json::from_value(args.get("tagIds").cloned().unwrap_or_default())
-                .map_err(|error| error.to_string())?;
+            let tag_ids: Vec<String> =
+                serde_json::from_value(args.get("tagIds").cloned().unwrap_or_default())
+                    .map_err(|error| error.to_string())?;
             kiro_account_manager::commands::group_tag_cmd::set_account_tags(
                 state,
                 arg_string(&args, "accountId")?.as_str(),
@@ -384,8 +1022,9 @@ async fn dispatch_command(
             .map(|_| Value::Null)
         }
         "remove_account_tags" => {
-            let tag_ids: Vec<String> = serde_json::from_value(args.get("tagIds").cloned().unwrap_or_default())
-                .map_err(|error| error.to_string())?;
+            let tag_ids: Vec<String> =
+                serde_json::from_value(args.get("tagIds").cloned().unwrap_or_default())
+                    .map_err(|error| error.to_string())?;
             kiro_account_manager::commands::group_tag_cmd::remove_account_tags(
                 state,
                 arg_string(&args, "accountId")?.as_str(),
@@ -413,6 +1052,10 @@ fn optional_string(args: &Value, key: &str) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
+fn project_dir(args: &Value) -> Option<String> {
+    optional_string(args, "projectDir").or_else(|| optional_string(args, "project_dir"))
+}
+
 fn required_string(args: &Value, primary: &str, fallback: &str) -> Result<String, String> {
     optional_string(args, primary)
         .or_else(|| optional_string(args, fallback))
@@ -424,9 +1067,13 @@ async fn headless_start_login(ctx: &ServerContext, args: &Value) -> Result<Value
         .get("provider")
         .and_then(Value::as_str)
         .ok_or("缺少 provider")?;
-    let config = get_provider_config(provider).ok_or_else(|| format!("不支持的 provider: {provider}"))?;
+    let config =
+        get_provider_config(provider).ok_or_else(|| format!("不支持的 provider: {provider}"))?;
     if config.auth_method != auth::providers::AuthMethod::Social {
-        return Err("Railway 无头登录目前支持 Google/Github；BuilderId/Enterprise 请导入账号 JSON".to_string());
+        return Err(
+            "Railway 无头登录目前支持 Google/Github；BuilderId/Enterprise 请导入账号 JSON"
+                .to_string(),
+        );
     }
 
     let machine_id = generate_account_machine_id();
@@ -434,12 +1081,8 @@ async fn headless_start_login(ctx: &ServerContext, args: &Value) -> Result<Value
     let verifier = auth::auth_social::generate_code_verifier_social();
     let challenge = auth::auth_social::generate_code_challenge_social(&verifier);
     let client = KiroAuthServiceClient::new(&machine_id)?;
-    let authorization_url = client.authorization_url(
-        provider,
-        ctx.redirect_uri.as_str(),
-        &challenge,
-        &state,
-    );
+    let authorization_url =
+        client.authorization_url(provider, ctx.redirect_uri.as_str(), &challenge, &state);
 
     *lock_store(&tauri_state(ctx).pending_login, "pending_login")? = Some(PendingLogin {
         provider: provider.to_string(),
@@ -469,10 +1112,14 @@ async fn oauth_callback(
 
     let pending = {
         let app_state = tauri_state(&ctx);
-        let pending = match lock_store(&app_state.pending_login, "pending_login") {
+        let locked = lock_store(&app_state.pending_login, "pending_login");
+        let pending = match locked {
             Ok(mut slot) => slot.take(),
             Err(error) => return internal_error(error),
         };
+        // Keep the mutex guard's temporary out of the block tail. Without an
+        // explicit binding, Rust can drop the Result after `app_state`, which
+        // also makes the Axum handler future fail the `Send` bound.
         pending
     };
     let Some(pending) = pending else {
@@ -487,7 +1134,12 @@ async fn oauth_callback(
         Err(error) => return internal_error(error),
     };
     let token: auth::providers::SocialTokenResponse = match client
-        .create_token(&code, &pending.code_verifier, ctx.redirect_uri.as_str(), None)
+        .create_token(
+            &code,
+            &pending.code_verifier,
+            ctx.redirect_uri.as_str(),
+            None,
+        )
         .await
     {
         Ok(token) => token,
@@ -507,14 +1159,22 @@ async fn oauth_callback(
         return bad_request("账号已被封禁");
     }
 
-    let (email, user_id) = kiro_account_manager::commands::common::extract_user_info(&usage.usage_data);
+    let (email, user_id) =
+        kiro_account_manager::commands::common::extract_user_info(&usage.usage_data);
     let display = email
         .clone()
         .or_else(|| user_id.clone())
-        .unwrap_or_else(|| format!("{}_{}", pending.provider.to_lowercase(), &token.refresh_token[..8.min(token.refresh_token.len())]));
+        .unwrap_or_else(|| {
+            format!(
+                "{}_{}",
+                pending.provider.to_lowercase(),
+                &token.refresh_token[..8.min(token.refresh_token.len())]
+            )
+        });
     let account = {
         let app_state = tauri_state(&ctx);
-        let mut store = match lock_store(&app_state.store, "store") {
+        let locked = lock_store(&app_state.store, "store");
+        let mut store = match locked {
             Ok(store) => store,
             Err(error) => return internal_error(error),
         };
@@ -599,10 +1259,67 @@ fn server_config(port: u16) -> Result<GatewayConfig, String> {
     }
     if config.pool_account_ids.is_empty() && config.account_mode == "pool" {
         let accounts = AccountStore::new().get_all();
-        config.pool_account_ids = accounts.into_iter().filter(|account| account.enabled).map(|account| account.id).collect();
+        config.pool_account_ids = accounts
+            .into_iter()
+            .filter(|account| account.enabled)
+            .map(|account| account.id)
+            .collect();
     }
     gateway::save_gateway_config(&config)?;
     Ok(config)
+}
+
+fn clean_env_value(value: String) -> String {
+    value
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .trim()
+        .to_string()
+}
+
+fn database_url_from_env() -> anyhow::Result<String> {
+    let names = [
+        "DATABASE_URL",
+        "DATABASE_PRIVATE_URL",
+        "POSTGRES_URL",
+        "POSTGRESQL_URL",
+        "DATABASE_PUBLIC_URL",
+    ];
+    let mut invalid = Vec::new();
+    for name in names {
+        let Ok(raw) = env::var(name) else { continue };
+        let value = clean_env_value(raw);
+        if value.is_empty() || value.contains("${{") || value.contains("}}") {
+            invalid.push(name);
+            continue;
+        }
+        if value.starts_with("postgres://") || value.starts_with("postgresql://") {
+            return Ok(value);
+        }
+        invalid.push(name);
+    }
+    if invalid.is_empty() {
+        anyhow::bail!("必须设置 DATABASE_URL（Railway Postgres），且值必须是 postgres:// 或 postgresql:// URL");
+    }
+    anyhow::bail!(
+        "Railway 数据库连接变量无效（{}）。请在 Variables 中引用 Postgres 服务的 DATABASE_PRIVATE_URL，且不要保留 ${{{{...}}}} 模板或引号",
+        invalid.join(", ")
+    )
+}
+
+fn public_base_url_from_env(port: u16) -> String {
+    let raw = env::var("PUBLIC_BASE_URL")
+        .or_else(|_| env::var("RAILWAY_PUBLIC_DOMAIN"))
+        .ok()
+        .map(clean_env_value)
+        .filter(|value| !value.is_empty());
+    let value = raw.unwrap_or_else(|| format!("http://127.0.0.1:{port}"));
+    if value.starts_with("http://") || value.starts_with("https://") {
+        value.trim_end_matches('/').to_string()
+    } else {
+        format!("https://{}", value.trim_end_matches('/'))
+    }
 }
 
 async fn shutdown_signal() {
@@ -623,12 +1340,15 @@ async fn shutdown_signal() {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     env_logger::init();
-    let admin_token = env::var("ADMIN_TOKEN").map_err(|_| anyhow::anyhow!("必须设置 ADMIN_TOKEN"))?;
+    let admin_token =
+        env::var("ADMIN_TOKEN").map_err(|_| anyhow::anyhow!("必须设置 ADMIN_TOKEN"))?;
     if admin_token.trim().is_empty() {
         anyhow::bail!("ADMIN_TOKEN 不能为空");
     }
-    let database_url = env::var("DATABASE_URL").map_err(|_| anyhow::anyhow!("必须设置 DATABASE_URL（Railway Postgres）"))?;
-    let port = env::var("PORT").unwrap_or_else(|_| "8765".to_string()).parse::<u16>()?;
+    let database_url = database_url_from_env()?;
+    let port = env::var("PORT")
+        .unwrap_or_else(|_| "8765".to_string())
+        .parse::<u16>()?;
     let data_dir = core::paths::app_data_dir_or_default();
     tokio::fs::create_dir_all(&data_dir).await?;
 
@@ -641,11 +1361,7 @@ async fn main() -> anyhow::Result<()> {
         pending_login: std::sync::Mutex::new(None),
         gateway: std::sync::Mutex::new(None),
     };
-    let base_url = env::var("PUBLIC_BASE_URL")
-        .or_else(|_| env::var("RAILWAY_PUBLIC_DOMAIN").map(|domain| format!("https://{domain}")))
-        .unwrap_or_else(|_| format!("http://127.0.0.1:{port}"))
-        .trim_end_matches('/')
-        .to_string();
+    let base_url = public_base_url_from_env(port);
     let tauri_app = tauri::test::mock_builder()
         .manage(app)
         .build(tauri::test::mock_context(tauri::test::noop_assets()))
@@ -661,13 +1377,17 @@ async fn main() -> anyhow::Result<()> {
         .map_err(|_| anyhow::anyhow!("重复安装 server routes"))?;
     let config = server_config(port).map_err(anyhow::Error::msg)?;
     let state = ctx.handle.state::<AppState>();
-    gateway::start_gateway(&state, config).await.map_err(anyhow::Error::msg)?;
+    gateway::start_gateway(&state, config)
+        .await
+        .map_err(anyhow::Error::msg)?;
     db.sync_now().await?;
     db.clone().spawn_sync_loop();
     log::info!("headless server listening on 0.0.0.0:{port}");
 
     shutdown_signal().await;
-    gateway::stop_gateway(&state).await.map_err(anyhow::Error::msg)?;
+    gateway::stop_gateway(&state)
+        .await
+        .map_err(anyhow::Error::msg)?;
     db.sync_now().await?;
     log::info!("headless server stopped at {}", Utc::now());
     Ok(())

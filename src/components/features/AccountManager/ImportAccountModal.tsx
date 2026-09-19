@@ -78,6 +78,75 @@ function pick(item: any, camel: string, snake: string) {
   return item[camel] ?? item[snake]
 }
 
+function asNumber(value: any, fallback = 0) {
+  const number = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(number) ? number : fallback
+}
+
+// Convert kiro-account-lite's last-known subscription/usage snapshot into the
+// same shape returned by Kiro's getUsageLimits endpoint. Live usage still wins
+// whenever the server can fetch it after importing the credentials.
+function normalizeKiroLiteUsage(raw: any) {
+  const existing = raw?.usageData ?? raw?.usage_data
+  if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
+    return existing
+  }
+
+  const snapshot = raw?.usage && typeof raw.usage === 'object' ? raw.usage : null
+  const subscription = raw?.subscription && typeof raw.subscription === 'object'
+    ? raw.subscription
+    : null
+  if (!snapshot && !subscription) return undefined
+
+  const resource = snapshot?.resourceDetail && typeof snapshot.resourceDetail === 'object'
+    ? snapshot.resourceDetail
+    : {}
+  const title = subscription?.title || subscription?.subscriptionTitle || ''
+  const type = subscription?.type || ''
+  const overageCap = asNumber(resource.overageCap)
+  const overageCapable = overageCap > 0 || /PRO/i.test(`${title} ${type}`)
+  const nextDateReset = snapshot?.nextResetDate
+    ? Math.floor(Date.parse(snapshot.nextResetDate) / 1000)
+    : undefined
+  const freeTrialLimit = asNumber(snapshot?.freeTrialLimit)
+  const freeTrialCurrent = asNumber(snapshot?.freeTrialCurrent)
+
+  return {
+    userInfo: {
+      ...(raw.email ? { email: raw.email } : {}),
+      ...(raw.userId || raw.user_id ? { userId: raw.userId ?? raw.user_id } : {})
+    },
+    subscriptionInfo: {
+      ...(type ? { type } : {}),
+      ...(title ? { subscriptionTitle: title } : {}),
+      ...(subscription?.rawType ? { rawType: subscription.rawType } : {}),
+      overageCapability: overageCapable ? 'OVERAGE_CAPABLE' : 'OVERAGE_INCAPABLE',
+      upgradeCapability: /PRO/i.test(`${title} ${type}`) ? 'UPGRADE_INCAPABLE' : 'UPGRADE_CAPABLE'
+    },
+    usageBreakdownList: [{
+      currentUsage: asNumber(snapshot?.current ?? snapshot?.baseCurrent),
+      usageLimit: asNumber(snapshot?.limit ?? snapshot?.baseLimit),
+      currentUsageWithPrecision: asNumber(snapshot?.current ?? snapshot?.baseCurrent),
+      usageLimitWithPrecision: asNumber(snapshot?.limit ?? snapshot?.baseLimit),
+      currentOverages: 0,
+      overageCap,
+      ...(Array.isArray(snapshot?.bonuses) ? { bonuses: snapshot.bonuses } : {}),
+      ...(freeTrialLimit > 0 ? {
+        freeTrialInfo: {
+          freeTrialStatus: 'ACTIVE',
+          usageLimit: freeTrialLimit,
+          currentUsage: freeTrialCurrent,
+          ...(subscription?.expiresAt ? { freeTrialExpiry: Math.floor(asNumber(subscription.expiresAt) / 1000) } : {})
+        }
+      } : {})
+    }],
+    overageConfiguration: {
+      overageStatus: resource.overageEnabled ? 'ENABLED' : 'DISABLED'
+    },
+    ...(Number.isFinite(nextDateReset) ? { nextDateReset } : {})
+  }
+}
+
 // Accept exports from kiro-account-lite and similar tools where the account
 // list is wrapped in `accounts` and credentials are nested under `credentials`.
 // Keep the normalized shape compatible with the existing import handlers.
@@ -92,6 +161,7 @@ function normalizeImportedAccount(raw: any) {
   return {
     ...item,
     provider: first(item.provider, item.idp),
+    authMethod: first(item.authMethod, item.auth_method, credentials.authMethod, credentials.auth_method),
     userId: first(item.userId, item.user_id, credentials.userId, credentials.user_id),
     profileArn: first(item.profileArn, item.profile_arn, credentials.profileArn, credentials.profile_arn),
     accessToken: first(item.accessToken, item.access_token, credentials.accessToken, credentials.access_token),
@@ -102,8 +172,10 @@ function normalizeImportedAccount(raw: any) {
     machineId: first(item.machineId, item.machine_id, credentials.machineId, credentials.machine_id),
     startUrl: first(item.startUrl, item.start_url, credentials.startUrl, credentials.start_url),
     clientIdHash: first(item.clientIdHash, item.client_id_hash, credentials.clientIdHash, credentials.client_id_hash),
+    expiresAt: first(item.expiresAt, item.expires_at, credentials.expiresAt, credentials.expires_at),
     tokenEndpoint: first(item.tokenEndpoint, item.token_endpoint, credentials.tokenEndpoint, credentials.token_endpoint),
     issuerUrl: first(item.issuerUrl, item.issuer_url, credentials.issuerUrl, credentials.issuer_url),
+    usageData: normalizeKiroLiteUsage(item),
   }
 }
 
@@ -427,7 +499,9 @@ function ImportAccountModal({ onClose, onSuccess, onNavigate }: ImportAccountMod
             accessToken: item.accessToken || null,
             password: item.password || null,
             startUrl: item.startUrl || null,  // Enterprise 可能需要
-            clientIdHash: item.clientIdHash || null  // Enterprise 可用 clientIdHash 替代 startUrl
+            clientIdHash: item.clientIdHash || null,  // Enterprise 可用 clientIdHash 替代 startUrl
+            profileArn: item.profileArn || item.profile_arn || null,
+            usageData: item.usageData || null
           }
 
           result = await addAccountByIdc(params)
@@ -496,7 +570,9 @@ function ImportAccountModal({ onClose, onSuccess, onNavigate }: ImportAccountMod
             accessToken: account.accessToken || null,
             password: null,
             startUrl: null,  // 从 Kiro 导入时不需要 startUrl（使用 clientIdHash）
-            clientIdHash: account.clientIdHash || null  // 使用 Kiro 提供的 clientIdHash
+            clientIdHash: account.clientIdHash || null,  // 使用 Kiro 提供的 clientIdHash
+            profileArn: account.profileArn || null,
+            usageData: account.usageData || null
           }
 
           result = await addAccountByIdc(params)
