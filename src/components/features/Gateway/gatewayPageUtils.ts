@@ -105,7 +105,11 @@ const isValidIpv4Address = (value: string): boolean => {
 const isValidIpv6Address = (value: string): boolean => {
   try {
     const parsed = new URL(`http://[${value}]/`)
-    return parsed.hostname === value
+    // Chromium/Node expose URL.hostname with brackets for IPv6 literals.
+    // Normalize them before comparing so wildcard entries such as `::/0`
+    // pass the same validation that the Rust `ipnet` allowlist accepts.
+    const hostname = parsed.hostname.replace(/^\[|\]$/g, '')
+    return hostname === value
   } catch {
     return false
   }

@@ -110,6 +110,20 @@ test('buildGatewayBaseUrl uses the public web origin for headless remote access'
   )
 })
 
+test('createGatewayFieldErrors accepts IPv6 wildcard allowlist entries', () => {
+  const errors = createGatewayFieldErrors({
+    host: '0.0.0.0',
+    port: 8080,
+    apiKey: 'sk-test',
+    region: 'us-east-1',
+    accountMode: 'pool',
+    localOnly: false,
+    allowedIpsText: '0.0.0.0/0\n::/0',
+  })
+
+  assert.equal(errors.allowedIpsText, undefined)
+})
+
 test('buildClientSamples redacts full api key in integration snippets', () => {
   const samples = buildClientSamples('http://127.0.0.1:8765', 'sk-super-secret-value')
 
