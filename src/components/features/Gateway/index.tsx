@@ -573,7 +573,7 @@ function GatewayPage() {
                           onClick={() => {
                             const text = item.id === 'current-entry'
                               ? effectiveBaseUrl
-                              : (effectiveConfig.clientApiKeysText || effectiveConfig.apiKey || '').split('\n')[0]?.trim()
+                              : getEffectiveClientApiKey(effectiveConfig.clientApiKeysText || effectiveConfig.apiKey)
                             copyText(text, t('gateway.copiedItem', { label: item.label }))
                           }}
                         >
@@ -653,6 +653,18 @@ function GatewayPage() {
                         <div className="flex items-center gap-1 min-w-0">
                           <span className="shrink-0 text-muted-foreground">{t('gateway.baseUrlLabel')}</span>
                           <code className="truncate font-mono text-foreground" title={client.baseUrl}>{client.baseUrl}</code>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-5 w-5 shrink-0 p-0"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              copyText(client.baseUrl, t('gateway.copiedItem', { label: t('gateway.baseUrlLabel') }))
+                            }}
+                            title={t('gateway.baseUrlLabel')}
+                          >
+                            <Copy size={11} className="text-muted-foreground" />
+                          </Button>
                         </div>
                         <div className="flex items-center gap-1 min-w-0">
                           <span className="shrink-0 text-muted-foreground">{t('gateway.authHeaderLabel')}</span>
@@ -665,6 +677,19 @@ function GatewayPage() {
                         <div className="flex items-center gap-1 min-w-0">
                           <span className="shrink-0 text-muted-foreground">{t('gateway.clientKey')}</span>
                           <code className="truncate font-mono text-foreground" title={client.keyMasked || '-'}>{client.keyMasked || '-'}</code>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-5 w-5 shrink-0 p-0"
+                            disabled={!client.key}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              copyText(client.key, t('gateway.copiedItem', { label: t('gateway.clientKey') }))
+                            }}
+                            title={t('gateway.clientKey')}
+                          >
+                            <Copy size={11} className="text-muted-foreground" />
+                          </Button>
                         </div>
                       </div>
                     </div>
@@ -710,9 +735,24 @@ function GatewayPage() {
                         </div>
                         <div className="flex flex-col gap-0.5">
                           <span className="text-[10px] text-muted-foreground">{t('gateway.clientKey')}</span>
-                          <code className="truncate rounded bg-background/60 px-1.5 py-1 font-mono">
+                          <div className="flex items-center gap-1">
+                            <code className="min-w-0 flex-1 truncate rounded bg-background/60 px-1.5 py-1 font-mono">
                             {otherClientRecipe?.keyMasked || '-'}
-                          </code>
+                            </code>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 w-6 shrink-0 p-0"
+                              disabled={!otherClientRecipe?.key}
+                              onClick={() => copyText(
+                                otherClientRecipe?.key ?? '',
+                                t('gateway.copiedItem', { label: t('gateway.clientKey') })
+                              )}
+                              title={t('gateway.clientKey')}
+                            >
+                              <Copy size={11} className="text-muted-foreground" />
+                            </Button>
+                          </div>
                         </div>
                       </div>
                       <Button
