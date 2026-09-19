@@ -121,7 +121,10 @@ pub async fn resolve_managed_account_credentials(
             let pool_accounts: Vec<_> = store
                 .accounts
                 .iter()
-                .filter(|account| config.pool_account_ids.contains(&account.id))
+                .filter(|account| {
+                    config.pool_account_ids.is_empty()
+                        || config.pool_account_ids.contains(&account.id)
+                })
                 .collect();
 
             !pool_accounts.is_empty()
@@ -164,7 +167,8 @@ pub async fn resolve_managed_account_credentials(
             .accounts
             .iter()
             .filter(|account| {
-                config.pool_account_ids.contains(&account.id)
+                (config.pool_account_ids.is_empty()
+                    || config.pool_account_ids.contains(&account.id))
                     && account.is_available()
                     && account.enabled
             })

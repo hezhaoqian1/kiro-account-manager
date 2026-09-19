@@ -44,6 +44,25 @@ impl KiroAuthServiceClient {
         format!("{endpoint}/login")
     }
 
+    /// Build the provider authorization URL without opening a local browser.
+    /// Headless deployments use this URL in the web management console.
+    pub fn authorization_url(
+        &self,
+        provider: &str,
+        redirect_uri: &str,
+        code_challenge: &str,
+        state: &str,
+    ) -> String {
+        format!(
+            "{}?idp={}&redirect_uri={}&code_challenge={}&code_challenge_method=S256&state={}",
+            self.login_url(),
+            provider,
+            urlencoding::encode(redirect_uri),
+            code_challenge,
+            state,
+        )
+    }
+
     fn create_token_url(&self) -> String {
         let endpoint = &self.endpoint;
         format!("{endpoint}/oauth/token")
@@ -63,16 +82,10 @@ impl KiroAuthServiceClient {
         code_challenge: &str,
         state: &str,
     ) -> Result<(), String> {
-        let login_url = format!(
-            "{}?idp={}&redirect_uri={}&code_challenge={}&code_challenge_method=S256&state={}",
-            self.login_url(),
-            provider,
-            urlencoding::encode(redirect_uri),
-            code_challenge,
-            state,
-        );
-
-        let login_url = login_url.trim().to_string();
+        let login_url = self
+            .authorization_url(provider, redirect_uri, code_challenge, state)
+            .trim()
+            .to_string();
 
         open_browser(&login_url)?;
 

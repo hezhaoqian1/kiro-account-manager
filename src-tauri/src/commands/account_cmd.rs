@@ -1716,7 +1716,23 @@ pub async fn list_available_models(
     id: String,
     force_refresh: Option<bool>,
 ) -> Result<ListAvailableModelsResponse, String> {
-    let mut account = find_account_by_id(&state, &id)?;
+    let result = list_available_models_for_state(&state, id, force_refresh).await;
+    if let Err(error) = &result {
+        if error.starts_with("BANNED:") {
+            let _ = app.emit("accounts-updated", ());
+        }
+    }
+    result
+}
+
+/// Shared implementation for desktop and the headless HTTP management API.
+/// The desktop wrapper above is responsible only for emitting its UI event.
+pub async fn list_available_models_for_state(
+    state: &AppState,
+    id: String,
+    force_refresh: Option<bool>,
+) -> Result<ListAvailableModelsResponse, String> {
+    let mut account = find_account_by_id(state, &id)?;
     let generated_machine_id = if account
         .machine_id
         .as_ref()
@@ -1810,8 +1826,6 @@ pub async fn list_available_models(
                 stored_account.status = "banned".to_string();
                 stored_account.enabled = false;
                 save_store(&store)?;
-                // 通知前端刷新账号列表
-                let _ = app.emit("accounts-updated", ());
             }
             Err(error)
         }

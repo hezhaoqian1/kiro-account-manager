@@ -64,6 +64,12 @@ pub fn app_data_dir() -> Option<PathBuf> {
     if let Some(dir) = DATA_DIR_OVERRIDE.get() {
         return Some(dir.clone());
     }
+    if let Ok(raw) = std::env::var("KIRO_DATA_DIR") {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            return Some(PathBuf::from(trimmed));
+        }
+    }
     dirs::data_dir().map(|dir| dir.join(DATA_DIR_NAME))
 }
 
@@ -74,6 +80,12 @@ pub fn app_data_dir() -> Option<PathBuf> {
 pub fn app_data_dir_or_default() -> PathBuf {
     if let Some(dir) = DATA_DIR_OVERRIDE.get() {
         return dir.clone();
+    }
+    if let Ok(raw) = std::env::var("KIRO_DATA_DIR") {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
+        }
     }
     match dirs::data_dir() {
         Some(dir) => dir.join(DATA_DIR_NAME),

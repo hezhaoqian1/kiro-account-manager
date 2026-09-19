@@ -7,6 +7,8 @@ import Sidebar from './components/features/Layout'
 import UpdateChecker from './components/shared/UpdateChecker'
 import WelcomeModal from './components/shared/WelcomeModal'
 import { dismissBootSplash } from './utils/bootSplash'
+import { clearAdminToken, getAdminToken, isTauriRuntime } from './compat/tauriCore'
+import WebAdminLogin from './components/shared/WebAdminLogin'
 
 import { useApp } from './hooks/useApp'
 import { useAppSettings } from './contexts/AppSettingsContext'
@@ -32,6 +34,7 @@ function PageLoading() {
 
 function App() {
   const [user, setUser] = useState<any>(null)
+  const [authChecked, setAuthChecked] = useState(isTauriRuntime())
   const [activeMenu, setActiveMenu] = useState<string>(() => {
     return localStorage.getItem('activeMenu') || 'home'
   })
@@ -120,7 +123,10 @@ function App() {
       const currentUser = await getCurrentUser<any>()
       setUser(currentUser)
     } catch (e) {
-      console.error('Auth check failed:', e)
+      if (isTauriRuntime()) console.error('Auth check failed:', e)
+      setUser(null)
+    } finally {
+      setAuthChecked(true)
     }
   }
 
@@ -129,8 +135,16 @@ function App() {
   }
 
   const handleLogout = async () => {
-    await apiLogout()
+    if (isTauriRuntime()) {
+      await apiLogout()
+    } else {
+      clearAdminToken()
+    }
     setUser(null)
+  }
+
+  if (!isTauriRuntime() && (!authChecked || !user)) {
+    return <WebAdminLogin onAuthenticated={() => window.location.reload()} />
   }
 
   const routeProps = useMemo<Record<string, any>>(() => ({

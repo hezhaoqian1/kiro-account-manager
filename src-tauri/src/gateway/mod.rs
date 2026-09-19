@@ -32,7 +32,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU64, Ordering},
-        Arc,
+        Arc, OnceLock,
     },
     time::Instant,
 };
@@ -356,17 +356,27 @@ pub(crate) struct ResponsesSessionEntry {
 pub(crate) type ResponsesSessionStore = Arc<AsyncMutex<HashMap<String, ResponsesSessionEntry>>>;
 
 #[derive(Clone)]
-struct RouterState {
-    config: GatewayConfig,
-    request_count: Arc<AtomicU64>,
-    last_error: Arc<AsyncMutex<Option<String>>>,
-    http: Client,
-    responses_sessions: ResponsesSessionStore,
+pub struct RouterState {
+    pub(crate) config: GatewayConfig,
+    pub(crate) request_count: Arc<AtomicU64>,
+    pub(crate) last_error: Arc<AsyncMutex<Option<String>>>,
+    pub(crate) http: Client,
+    pub(crate) responses_sessions: ResponsesSessionStore,
     #[allow(dead_code)]
-    token_cache: Arc<AsyncMutex<TokenCache>>,
-    load_balancer: Arc<load_balancer::LoadBalancer>,
-    log_store: Arc<log_store::LogStore>,
-    response_cache: Arc<AsyncMutex<response_cache::ResponseCache>>,
+    pub(crate) token_cache: Arc<AsyncMutex<TokenCache>>,
+    pub(crate) load_balancer: Arc<load_balancer::LoadBalancer>,
+    pub(crate) log_store: Arc<log_store::LogStore>,
+    pub(crate) response_cache: Arc<AsyncMutex<response_cache::ResponseCache>>,
+}
+
+// Headless deployments install management API and static-file routes here.
+// The desktop app leaves this unset, preserving its existing gateway surface.
+static EXTRA_ROUTES: OnceLock<Router<RouterState>> = OnceLock::new();
+
+/// Install routes that share the gateway listener. Call before starting the
+/// first runtime; subsequent gateway restarts reuse the same routes.
+pub fn install_extra_routes(routes: Router<RouterState>) -> Result<(), Router<RouterState>> {
+    EXTRA_ROUTES.set(routes)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -467,7 +477,7 @@ impl Default for GatewayConfig {
         }
     }
 }
-pub(crate) fn effective_client_api_keys(config: &GatewayConfig) -> Vec<String> {
+pub fn effective_client_api_keys(config: &GatewayConfig) -> Vec<String> {
     let mut keys = Vec::new();
 
     if let Some(key) = config
@@ -544,10 +554,11 @@ fn ensure_config_valid(config: &GatewayConfig) -> Result<(), String> {
         {
             return Err("group 模式必须选择分组".to_string());
         }
-        "pool" if config.pool_account_ids.is_empty() => {
-            return Err("pool 模式必须至少选择一个账号".to_string());
-        }
-        "single" | "group" | "pool" => {}
+        // An empty pool is valid during headless bootstrap. The server must
+        // be able to start before the first account is imported; the proxy
+        // treats an empty pool as "all enabled accounts" until it is filled.
+        "pool" => {}
+        "single" | "group" => {}
         "local" => {
             return Err("2API不再支持 local 模式，请改用 single/group/pool 账号池模式".to_string());
         }
@@ -1073,7 +1084,7 @@ fn router(state: RouterState) -> Router {
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
         .allow_headers(Any);
 
-    Router::new()
+    let mut app = Router::new()
         .route("/health", get(health_handler))
         .route("/v1/models", get(models_handler))
         .route("/v1/messages", post(anthropic_messages_handler))
@@ -1084,8 +1095,13 @@ fn router(state: RouterState) -> Router {
         .route("/v1/responses", post(openai_responses_handler))
         .route("/v1/responses/input_tokens", post(openai_tokens_handler))
         .route("/v1/chat/completions", post(openai_chat_handler))
-        .layer(cors)
-        .with_state(state)
+        .layer(cors);
+
+    if let Some(extra) = EXTRA_ROUTES.get() {
+        app = app.merge(extra.clone());
+    }
+
+    app.with_state(state)
 }
 
 async fn spawn_runtime(config: GatewayConfig) -> Result<GatewayRuntime, String> {

@@ -545,7 +545,8 @@ pub async fn proxy_handler(
                 .accounts
                 .iter()
                 .filter(|account| {
-                    state.config.pool_account_ids.contains(&account.id)
+                    (state.config.pool_account_ids.is_empty()
+                        || state.config.pool_account_ids.contains(&account.id))
                         && account.is_available()
                         && account.enabled
                 })

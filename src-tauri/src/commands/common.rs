@@ -204,7 +204,7 @@ pub fn lock_store<'a, T>(mutex: &'a Mutex<T>, ctx: &str) -> Result<MutexGuard<'a
 
 /// 按 id 从 store 查账号副本，找不到时返回友好错误
 pub fn find_account_by_id(
-    state: &tauri::State<'_, crate::state::AppState>,
+    state: &crate::state::AppState,
     id: &str,
 ) -> Result<crate::core::account::Account, String> {
     let store = lock_store(&state.store, "store")?;

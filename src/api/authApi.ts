@@ -7,8 +7,8 @@ export function getSupportedProviders() {
 }
 
 // 发起 Kiro 登录（social 传 { provider }，Enterprise 额外传 startUrl/region）
-export function kiroLogin(params: { provider: string; startUrl?: string; region?: string }) {
-  return invoke('kiro_login', params)
+export function kiroLogin<T = unknown>(params: { provider: string; startUrl?: string; region?: string }) {
+  return invoke<T>('kiro_login', params)
 }
 
 // 取消进行中的登录

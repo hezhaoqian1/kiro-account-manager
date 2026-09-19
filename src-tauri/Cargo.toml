@@ -11,7 +11,7 @@ edition = "2021"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = ["tray-icon", "test"] }
 tauri-plugin-shell = "2"
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2.10"
@@ -23,11 +23,12 @@ tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-http = "2"
 tauri-plugin-log = "2"
 log = "0.4"
+env_logger = "0.11"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "fs"], default-features = false }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "fs", "signal"], default-features = false }
 axum = "0.8"
-tower-http = { version = "0.6", features = ["cors"] }
+tower-http = { version = "0.6", features = ["cors", "fs"] }
 tokio-stream = "0.1"
 futures-util = "0.3"
 uuid = { version = "1.6", features = ["v4"] }
@@ -56,6 +57,7 @@ rustls-pemfile = "2"
 webpki-roots = "0.26"
 rusqlite = { version = "0.32", features = ["bundled"] }
 anyhow = "1.0"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres", "json", "chrono", "uuid"] }
 lru = "0.12"
 toml_edit = "0.25.11"
 tiktoken-rs = "0.5"
@@ -68,6 +70,10 @@ tower = { version = "0.5", features = ["util"] }
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+
+[[bin]]
+name = "server"
+path = "src/server.rs"
 
 # 开发配置：增量编译加速 + 避免编译器崩溃
 [profile.dev]

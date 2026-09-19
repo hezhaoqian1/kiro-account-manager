@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { getSupportedProviders, kiroLogin, cancelKiroLogin } from '../../../api/authApi'
 import { listen, UnlistenFn } from '@tauri-apps/api/event'
+import { isTauriRuntime } from '../../../compat/tauriCore'
 import { Loader } from 'lucide-react'
 import { useApp } from '../../../hooks/useApp'
 import { Button } from '../../shared/button'
@@ -151,7 +152,11 @@ function Login({ onLogin }: LoginProps) {
     setError('')
 
     try {
-      await kiroLogin({ provider })
+      const result = await kiroLogin<{ authorizationUrl?: string }>({ provider })
+      if (!isTauriRuntime() && result?.authorizationUrl) {
+        window.location.href = result.authorizationUrl
+        return
+      }
       onLogin?.()
     } catch (e) {
       console.error('Login error:', e)
@@ -200,11 +205,15 @@ function Login({ onLogin }: LoginProps) {
     setError('')
 
     try {
-      await kiroLogin({
+      const result = await kiroLogin<{ authorizationUrl?: string }>({
         provider: 'Enterprise',
         startUrl: normalizedStartUrl,
         region: normalizedRegion,
       })
+      if (!isTauriRuntime() && result?.authorizationUrl) {
+        window.location.href = result.authorizationUrl
+        return
+      }
       onLogin?.()
     } catch (e) {
       console.error('Login error:', e)

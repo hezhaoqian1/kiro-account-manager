@@ -8,6 +8,19 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      ...(process.env.TAURI_PLATFORM ? {} : {
+        '@tauri-apps/api/core': path.resolve(__dirname, './src/compat/tauriCore.ts'),
+        '@tauri-apps/api/event': path.resolve(__dirname, './src/compat/tauriEvent.ts'),
+        '@tauri-apps/api/app': path.resolve(__dirname, './src/compat/tauriApp.ts'),
+        '@tauri-apps/api/path': path.resolve(__dirname, './src/compat/tauriPath.ts'),
+        '@tauri-apps/api/window': path.resolve(__dirname, './src/compat/tauriWindow.ts'),
+        '@tauri-apps/plugin-dialog': path.resolve(__dirname, './src/compat/dialog.ts'),
+        '@tauri-apps/plugin-fs': path.resolve(__dirname, './src/compat/fs.ts'),
+        '@tauri-apps/plugin-opener': path.resolve(__dirname, './src/compat/opener.ts'),
+        '@tauri-apps/plugin-process': path.resolve(__dirname, './src/compat/process.ts'),
+        '@tauri-apps/plugin-updater': path.resolve(__dirname, './src/compat/updater.ts'),
+        '@tauri-apps/plugin-shell': path.resolve(__dirname, './src/compat/shell.ts'),
+      }),
     },
   },
   plugins: [

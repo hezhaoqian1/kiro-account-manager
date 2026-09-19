@@ -448,3 +448,4 @@ bun run tauri build  # 构建发行版
 
 <p align="center">Made with ❤️ by hj01857655</p>
 <p align="center"><sub>最后更新：2026-06-17 | 版本：v1.9.2</sub></p>
+> Railway / Headless 部署：请先阅读 [DEPLOYMENT_RAILWAY.md](./DEPLOYMENT_RAILWAY.md)。
