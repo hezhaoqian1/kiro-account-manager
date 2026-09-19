@@ -144,7 +144,13 @@ impl ThinkingParser {
             let safe_len = self.buffer.len().saturating_sub(Self::CLOSE_TAG.len() - 1);
             if safe_len > 0 {
                 // 确保 safe_len 在字符边界上
-                let safe_len = self.buffer.floor_char_boundary(safe_len);
+                // `floor_char_boundary` is not available on the Rust toolchain
+                // used by the Railway image, so walk back over a partial UTF-8
+                // code point using the stable `is_char_boundary` API.
+                let mut safe_len = safe_len;
+                while safe_len > 0 && !self.buffer.is_char_boundary(safe_len) {
+                    safe_len -= 1;
+                }
                 if safe_len > 0 {
                     let thinking_content = self.buffer[..safe_len].to_string();
                     self.buffer = self.buffer[safe_len..].to_string();
