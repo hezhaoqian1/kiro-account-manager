@@ -25,6 +25,41 @@ pub struct CacheUsage {
     pub cache_read_input_tokens: usize,
 }
 
+/// Merge Kiro's metering with the proxy's account-scoped fallback.
+///
+/// Kiro can report a positive cache write for every stateless request even
+/// when the same stable prefix was already seen by this proxy. In that case a
+/// local read is more useful to downstream Anthropic clients. A real upstream
+/// read always wins because it is the authoritative billing signal.
+pub fn merge_cache_usage(
+    upstream_read: Option<i32>,
+    upstream_creation: Option<i32>,
+    local: &CacheUsage,
+) -> (Option<i32>, Option<i32>, &'static str) {
+    if upstream_read.unwrap_or(0) > 0 {
+        return (upstream_read, upstream_creation, "upstream");
+    }
+
+    if local.cache_read_input_tokens > 0 {
+        return (
+            Some(local.cache_read_input_tokens as i32),
+            (local.cache_creation_input_tokens > 0)
+                .then_some(local.cache_creation_input_tokens as i32),
+            "local_estimate",
+        );
+    }
+
+    if upstream_creation.unwrap_or(0) > 0 {
+        return (upstream_read, upstream_creation, "upstream");
+    }
+
+    (
+        (local.cache_read_input_tokens > 0).then_some(local.cache_read_input_tokens as i32),
+        (local.cache_creation_input_tokens > 0).then_some(local.cache_creation_input_tokens as i32),
+        "local_estimate",
+    )
+}
+
 /// Convert normalized messages to the cache tracker's lossless JSON view.
 ///
 /// Anthropic `cache_control` is normalized into `metadata.cache_point` before
@@ -566,5 +601,25 @@ mod tests {
         let hit = tracker.compute("account-a", &second_profile);
         assert!(hit.cache_read_input_tokens >= 1024);
         assert_eq!(hit.cache_creation_input_tokens, 0);
+    }
+
+    #[test]
+    fn local_read_replaces_repeated_upstream_cache_write() {
+        let local = CacheUsage {
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 2048,
+        };
+        let merged = merge_cache_usage(Some(0), Some(2048), &local);
+        assert_eq!(merged, (Some(2048), None, "local_estimate"));
+    }
+
+    #[test]
+    fn real_upstream_read_remains_authoritative() {
+        let local = CacheUsage {
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 1024,
+        };
+        let merged = merge_cache_usage(Some(4096), Some(0), &local);
+        assert_eq!(merged, (Some(4096), Some(0), "upstream"));
     }
 }

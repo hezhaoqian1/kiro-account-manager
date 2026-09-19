@@ -1111,47 +1111,40 @@ pub async fn proxy_handler(
         aggregated.citations.len()
     );
 
-    // Prompt Cache 模拟：只有上游明确返回正数缓存 usage 时才采用上游值。
-    // Kiro 常会返回 Some(0)，这不代表它完成了缓存计费；此时仍需使用
-    // 代理自己的账号隔离缓存估算器。
-    let has_upstream_cache_usage = aggregated.cache_read_input_tokens.unwrap_or(0) > 0
-        || aggregated.cache_creation_input_tokens.unwrap_or(0) > 0;
-    if !has_upstream_cache_usage {
-        let tracker = crate::gateway::prompt_cache::global_prompt_cache_tracker();
-        let messages_json =
-            crate::gateway::prompt_cache::normalized_messages_for_cache(&request.messages);
-        let tools_json: Option<Vec<serde_json::Value>> = request.tools.as_ref().map(|tools| {
-            tools
-                .iter()
-                .map(|t| serde_json::to_value(t).unwrap_or_default())
-                .collect()
-        });
+    let tracker = crate::gateway::prompt_cache::global_prompt_cache_tracker();
+    let messages_json =
+        crate::gateway::prompt_cache::normalized_messages_for_cache(&request.messages);
+    let tools_json: Option<Vec<serde_json::Value>> = request.tools.as_ref().map(|tools| {
+        tools
+            .iter()
+            .map(|t| serde_json::to_value(t).unwrap_or_default())
+            .collect()
+    });
 
-        if let Some(profile) = tracker.build_profile(
-            None,
-            &messages_json,
-            tools_json.as_deref(),
-            aggregated.input_tokens as usize,
-            &request.model,
-        ) {
-            let cache_usage = tracker.compute(&successful_upstream.account_id, &profile);
-            tracker.update(&successful_upstream.account_id, &profile);
-
-            if cache_usage.cache_read_input_tokens > 0 {
-                aggregated.cache_read_input_tokens =
-                    Some(cache_usage.cache_read_input_tokens as i32);
-            }
-            if cache_usage.cache_creation_input_tokens > 0 {
-                aggregated.cache_creation_input_tokens =
-                    Some(cache_usage.cache_creation_input_tokens as i32);
-            }
-
-            log::info!(
-                "[非流式] Prompt Cache 模拟: read={}, creation={}",
-                cache_usage.cache_read_input_tokens,
-                cache_usage.cache_creation_input_tokens
+    if let Some(profile) = tracker.build_profile(
+        None,
+        &messages_json,
+        tools_json.as_deref(),
+        aggregated.input_tokens as usize,
+        &request.model,
+    ) {
+        let cache_usage = tracker.compute(&successful_upstream.account_id, &profile);
+        tracker.update(&successful_upstream.account_id, &profile);
+        let (cache_read, cache_creation, cache_source) =
+            crate::gateway::prompt_cache::merge_cache_usage(
+                aggregated.cache_read_input_tokens,
+                aggregated.cache_creation_input_tokens,
+                &cache_usage,
             );
-        }
+        aggregated.cache_read_input_tokens = cache_read;
+        aggregated.cache_creation_input_tokens = cache_creation;
+
+        log::info!(
+            "[非流式] Prompt Cache: read={}, creation={}, source={}",
+            cache_usage.cache_read_input_tokens,
+            cache_usage.cache_creation_input_tokens,
+            cache_source
+        );
     }
 
     // 还原工具名称（sanitized -> original）
