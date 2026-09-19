@@ -1382,8 +1382,9 @@ async fn shutdown_signal() {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     env_logger::init();
-    let admin_token =
-        env::var("ADMIN_TOKEN").map_err(|_| anyhow::anyhow!("必须设置 ADMIN_TOKEN"))?;
+    let admin_token = clean_env_value(
+        env::var("ADMIN_TOKEN").map_err(|_| anyhow::anyhow!("必须设置 ADMIN_TOKEN"))?,
+    );
     if admin_token.trim().is_empty() {
         anyhow::bail!("ADMIN_TOKEN 不能为空");
     }

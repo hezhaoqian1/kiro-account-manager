@@ -22,6 +22,9 @@ ADMIN_TOKEN=<long random value used only for the web console>
 PUBLIC_BASE_URL=https://<your-public-domain>
 ```
 
+Enter the admin token as the raw value (for example `a-long-random-token`),
+without shell-style quotes.
+
 Replace `Postgres` with the exact service name shown in your project. If that
 service exposes `DATABASE_URL` instead of `DATABASE_PRIVATE_URL`, use
 `${{Postgres.DATABASE_URL}}`. Do not enter a literal unresolved value such as
