@@ -5,7 +5,7 @@
 //! WebView, tray, desktop OAuth listeners or Kiro IDE processes.
 
 use axum::{
-    extract::{Extension, Path, Query, State as AxumState},
+    extract::{Extension, Path, Query},
     http::{HeaderMap, StatusCode},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
@@ -83,7 +83,6 @@ fn tauri_state(ctx: &ServerContext) -> TauriState<'_, AppState> {
 }
 
 async fn healthz(
-    AxumState(_gateway): AxumState<gateway::RouterState>,
     Extension(ctx): Extension<ServerContext>,
 ) -> Response {
     if let Err(error) = ctx.db.ping().await {
@@ -127,7 +126,6 @@ fn bad_request(message: impl Into<String>) -> Response {
 
 async fn invoke(
     Path(command): Path<String>,
-    AxumState(_gateway): AxumState<gateway::RouterState>,
     Extension(ctx): Extension<ServerContext>,
     headers: HeaderMap,
     Json(args): Json<Value>,
@@ -454,7 +452,6 @@ async fn headless_start_login(ctx: &ServerContext, args: &Value) -> Result<Value
 }
 
 async fn oauth_callback(
-    AxumState(_gateway): AxumState<gateway::RouterState>,
     Extension(ctx): Extension<ServerContext>,
     Query(query): Query<OAuthQuery>,
 ) -> Response {
@@ -470,9 +467,12 @@ async fn oauth_callback(
         None => return bad_request("OAuth 回调缺少 state"),
     };
 
-    let pending = match lock_store(&tauri_state(&ctx).pending_login, "pending_login") {
-        Ok(mut slot) => slot.take(),
-        Err(error) => return internal_error(error),
+    let pending = {
+        let app_state = tauri_state(&ctx);
+        match lock_store(&app_state.pending_login, "pending_login") {
+            Ok(mut slot) => slot.take(),
+            Err(error) => return internal_error(error),
+        }
     };
     let Some(pending) = pending else {
         return bad_request("登录会话不存在或已过期，请重新开始登录");
