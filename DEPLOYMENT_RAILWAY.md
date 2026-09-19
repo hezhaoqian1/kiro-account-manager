@@ -12,14 +12,21 @@ The React management console and all gateway protocols share the public
 
 ## Required Railway variables
 
-Create a Railway Postgres service and make sure its `DATABASE_URL` is visible
-to the application service. Set these variables in the application service:
+Create a Railway Postgres service and make sure its connection variable is
+available to the application service. Set these variables in the application
+service (Railway variable references must not be wrapped in quotes):
 
 ```text
-DATABASE_URL=${{Postgres.DATABASE_URL}}
+DATABASE_URL=${{Postgres.DATABASE_PRIVATE_URL}}
 ADMIN_TOKEN=<long random value used only for the web console>
 PUBLIC_BASE_URL=https://<your-public-domain>
 ```
+
+Replace `Postgres` with the exact service name shown in your project. If that
+service exposes `DATABASE_URL` instead of `DATABASE_PRIVATE_URL`, use
+`${{Postgres.DATABASE_URL}}`. Do not enter a literal unresolved value such as
+`"${{Postgres.DATABASE_PRIVATE_URL}}"`; the server rejects unresolved Railway
+templates and relative database URLs with an actionable startup error.
 
 `PORT` is supplied by Railway. `KIRO_DATA_DIR` may be left at the image default;
 it is only an ephemeral mirror of the database state and is recreated on every
