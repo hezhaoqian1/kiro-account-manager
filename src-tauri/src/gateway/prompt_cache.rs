@@ -60,6 +60,19 @@ pub fn merge_cache_usage(
     )
 }
 
+/// Anthropic's `input_tokens` excludes tokens represented by cache read/write
+/// fields. The proxy starts with a total estimate, so subtract local cache
+/// accounting before serializing a downstream usage object.
+pub fn uncached_input_tokens(
+    total_input_tokens: usize,
+    cache_read_input_tokens: Option<i32>,
+    cache_creation_input_tokens: Option<i32>,
+) -> i32 {
+    let cached = cache_read_input_tokens.unwrap_or(0).max(0) as usize
+        + cache_creation_input_tokens.unwrap_or(0).max(0) as usize;
+    total_input_tokens.saturating_sub(cached) as i32
+}
+
 /// Convert normalized messages to the cache tracker's lossless JSON view.
 ///
 /// Anthropic `cache_control` is normalized into `metadata.cache_point` before
@@ -621,5 +634,11 @@ mod tests {
         };
         let merged = merge_cache_usage(Some(4096), Some(0), &local);
         assert_eq!(merged, (Some(4096), Some(0), "upstream"));
+    }
+
+    #[test]
+    fn uncached_input_excludes_read_and_creation_tokens() {
+        assert_eq!(uncached_input_tokens(3091, Some(2627), None), 464);
+        assert_eq!(uncached_input_tokens(3091, None, Some(3057)), 34);
     }
 }

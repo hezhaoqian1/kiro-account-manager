@@ -27,6 +27,7 @@ fn refresh_cached_response_usage(
     state: &RouterState,
     request: &NormalizedRequest,
     response: &mut Value,
+    cached_total_input_tokens: usize,
 ) {
     let Some(account_id) = cache_account_id(state) else {
         return;
@@ -35,13 +36,23 @@ fn refresh_cached_response_usage(
         return;
     };
 
-    let input_tokens = usage
+    let usage_input_tokens = usage
         .get("input_tokens")
         .and_then(Value::as_u64)
+        .map(|value| value as usize)
         .unwrap_or_else(|| {
             let request_text = serde_json::to_string(&request.messages).unwrap_or_default();
-            crate::gateway::token_estimator::estimate_tokens(&request_text, &request.model) as u64
-        }) as usize;
+            crate::gateway::token_estimator::estimate_tokens(&request_text, &request.model)
+        });
+    let usage_cache_tokens = usage
+        .get("cache_read_input_tokens")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize
+        + usage
+            .get("cache_creation_input_tokens")
+            .and_then(Value::as_u64)
+            .unwrap_or(0) as usize;
+    let total_input_tokens = cached_total_input_tokens.max(usage_input_tokens + usage_cache_tokens);
     let messages_json =
         crate::gateway::prompt_cache::normalized_messages_for_cache(&request.messages);
     let tools_json: Option<Vec<Value>> = request.tools.as_ref().map(|tools| {
@@ -55,7 +66,7 @@ fn refresh_cached_response_usage(
         None,
         &messages_json,
         tools_json.as_deref(),
-        input_tokens,
+        total_input_tokens,
         &request.model,
     ) else {
         return;
@@ -91,6 +102,16 @@ fn refresh_cached_response_usage(
         None => {
             usage.remove("cache_creation_input_tokens");
         }
+    }
+    if source == "local_estimate" {
+        usage.insert(
+            "input_tokens".to_string(),
+            json!(crate::gateway::prompt_cache::uncached_input_tokens(
+                total_input_tokens,
+                upstream_read,
+                upstream_creation,
+            )),
+        );
     }
     log::info!(
         "[响应缓存] Prompt Cache usage refreshed: read={}, creation={}, source={}",
@@ -355,7 +376,12 @@ pub async fn proxy_handler(
 
             // 从缓存构建响应
             if let Ok(mut cached_response) = serde_json::from_str::<Value>(&cached.response) {
-                refresh_cached_response_usage(&state, &request, &mut cached_response);
+                refresh_cached_response_usage(
+                    &state,
+                    &request,
+                    &mut cached_response,
+                    cached.input_tokens.max(0) as usize,
+                );
                 let cached_response_json = serde_json::to_string(&cached_response).ok();
                 // 记录缓存命中日志
                 let cache_log_context = RequestLogContext {
@@ -1238,6 +1264,13 @@ pub async fn proxy_handler(
             );
         aggregated.cache_read_input_tokens = cache_read;
         aggregated.cache_creation_input_tokens = cache_creation;
+        if cache_source == "local_estimate" {
+            aggregated.input_tokens = crate::gateway::prompt_cache::uncached_input_tokens(
+                aggregated.input_tokens as usize,
+                cache_read,
+                cache_creation,
+            );
+        }
 
         log::info!(
             "[非流式] Prompt Cache: read={}, creation={}, source={}",

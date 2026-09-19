@@ -955,6 +955,13 @@ pub fn stream_proxy_response(
                 );
             aggregated.cache_read_input_tokens = cache_read;
             aggregated.cache_creation_input_tokens = cache_creation;
+            if cache_source == "local_estimate" {
+                aggregated.input_tokens = crate::gateway::prompt_cache::uncached_input_tokens(
+                    aggregated.input_tokens as usize,
+                    cache_read,
+                    cache_creation,
+                );
+            }
 
             log::info!(
                 "[流式] Prompt Cache: read={}, creation={}, source={}",
