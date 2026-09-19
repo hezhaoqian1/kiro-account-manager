@@ -2,6 +2,104 @@
 
 use super::*;
 
+fn cache_account_id(state: &RouterState) -> Option<String> {
+    if let Some(account_id) = state.config.account_id.as_deref() {
+        if !account_id.is_empty() {
+            return Some(account_id.to_string());
+        }
+    }
+
+    let mut store = AccountStore::new();
+    store.reload();
+    store
+        .accounts
+        .iter()
+        .find(|account| {
+            account.enabled
+                && account.is_available()
+                && (state.config.pool_account_ids.is_empty()
+                    || state.config.pool_account_ids.contains(&account.id))
+        })
+        .map(|account| account.id.clone())
+}
+
+fn refresh_cached_response_usage(
+    state: &RouterState,
+    request: &NormalizedRequest,
+    response: &mut Value,
+) {
+    let Some(account_id) = cache_account_id(state) else {
+        return;
+    };
+    let Some(usage) = response.get_mut("usage").and_then(Value::as_object_mut) else {
+        return;
+    };
+
+    let input_tokens = usage
+        .get("input_tokens")
+        .and_then(Value::as_u64)
+        .unwrap_or_else(|| {
+            let request_text = serde_json::to_string(&request.messages).unwrap_or_default();
+            crate::gateway::token_estimator::estimate_tokens(&request_text, &request.model) as u64
+        }) as usize;
+    let messages_json =
+        crate::gateway::prompt_cache::normalized_messages_for_cache(&request.messages);
+    let tools_json: Option<Vec<Value>> = request.tools.as_ref().map(|tools| {
+        tools
+            .iter()
+            .map(|tool| serde_json::to_value(tool).unwrap_or_default())
+            .collect()
+    });
+    let tracker = crate::gateway::prompt_cache::global_prompt_cache_tracker();
+    let Some(profile) = tracker.build_profile(
+        None,
+        &messages_json,
+        tools_json.as_deref(),
+        input_tokens,
+        &request.model,
+    ) else {
+        return;
+    };
+
+    let local = tracker.compute(&account_id, &profile);
+    tracker.update(&account_id, &profile);
+    let (upstream_read, upstream_creation, source) =
+        crate::gateway::prompt_cache::merge_cache_usage(
+            usage
+                .get("cache_read_input_tokens")
+                .and_then(Value::as_i64)
+                .map(|value| value as i32),
+            usage
+                .get("cache_creation_input_tokens")
+                .and_then(Value::as_i64)
+                .map(|value| value as i32),
+            &local,
+        );
+
+    match upstream_read {
+        Some(value) => {
+            usage.insert("cache_read_input_tokens".to_string(), json!(value));
+        }
+        None => {
+            usage.remove("cache_read_input_tokens");
+        }
+    }
+    match upstream_creation {
+        Some(value) => {
+            usage.insert("cache_creation_input_tokens".to_string(), json!(value));
+        }
+        None => {
+            usage.remove("cache_creation_input_tokens");
+        }
+    }
+    log::info!(
+        "[响应缓存] Prompt Cache usage refreshed: read={}, creation={}, source={}",
+        local.cache_read_input_tokens,
+        local.cache_creation_input_tokens,
+        source
+    );
+}
+
 pub async fn proxy_handler(
     state: RouterState,
     client_addr: SocketAddr,
@@ -256,7 +354,9 @@ pub async fn proxy_handler(
             );
 
             // 从缓存构建响应
-            if let Ok(cached_response) = serde_json::from_str::<Value>(&cached.response) {
+            if let Ok(mut cached_response) = serde_json::from_str::<Value>(&cached.response) {
+                refresh_cached_response_usage(&state, &request, &mut cached_response);
+                let cached_response_json = serde_json::to_string(&cached_response).ok();
                 // 记录缓存命中日志
                 let cache_log_context = RequestLogContext {
                     request: Some(&request),
@@ -268,7 +368,7 @@ pub async fn proxy_handler(
                     "success (cached)",
                     None,
                     None,
-                    Some(&cached.response),
+                    cached_response_json.as_deref(),
                     Some(cached.input_tokens),
                     Some(cached.output_tokens),
                     None,
