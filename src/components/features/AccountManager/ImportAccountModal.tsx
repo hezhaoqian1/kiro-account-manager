@@ -78,6 +78,35 @@ function pick(item: any, camel: string, snake: string) {
   return item[camel] ?? item[snake]
 }
 
+// Accept exports from kiro-account-lite and similar tools where the account
+// list is wrapped in `accounts` and credentials are nested under `credentials`.
+// Keep the normalized shape compatible with the existing import handlers.
+function normalizeImportedAccount(raw: any) {
+  const item = raw && typeof raw === 'object' ? raw : {}
+  const credentials = item.credentials && typeof item.credentials === 'object'
+    ? item.credentials
+    : {}
+
+  const first = (...values: any[]) => values.find((value) => value !== undefined && value !== null && value !== '')
+
+  return {
+    ...item,
+    provider: first(item.provider, item.idp),
+    userId: first(item.userId, item.user_id, credentials.userId, credentials.user_id),
+    profileArn: first(item.profileArn, item.profile_arn, credentials.profileArn, credentials.profile_arn),
+    accessToken: first(item.accessToken, item.access_token, credentials.accessToken, credentials.access_token),
+    refreshToken: first(item.refreshToken, item.refresh_token, credentials.refreshToken, credentials.refresh_token),
+    clientId: first(item.clientId, item.client_id, credentials.clientId, credentials.client_id),
+    clientSecret: first(item.clientSecret, item.client_secret, credentials.clientSecret, credentials.client_secret),
+    region: first(item.region, item.authRegion, item.auth_region, credentials.region),
+    machineId: first(item.machineId, item.machine_id, credentials.machineId, credentials.machine_id),
+    startUrl: first(item.startUrl, item.start_url, credentials.startUrl, credentials.start_url),
+    clientIdHash: first(item.clientIdHash, item.client_id_hash, credentials.clientIdHash, credentials.client_id_hash),
+    tokenEndpoint: first(item.tokenEndpoint, item.token_endpoint, credentials.tokenEndpoint, credentials.token_endpoint),
+    issuerUrl: first(item.issuerUrl, item.issuer_url, credentials.issuerUrl, credentials.issuer_url),
+  }
+}
+
 // external_idp 判定：authMethod 命中，或带微软 tokenEndpoint/issuerUrl
 function isExternalIdpItem(item: any): boolean {
   if (canonicalizeAuthMethod(pick(item, 'authMethod', 'auth_method')) === 'external_idp') return true
@@ -296,7 +325,11 @@ function ImportAccountModal({ onClose, onSuccess, onNavigate }: ImportAccountMod
 
     try {
       let data = JSON.parse(text)
+      if (!Array.isArray(data) && Array.isArray(data.accounts)) {
+        data = data.accounts
+      }
       if (!Array.isArray(data)) data = [data]
+      data = data.map(normalizeImportedAccount)
 
       const valid: any[] = []
       const invalid: any[] = []
