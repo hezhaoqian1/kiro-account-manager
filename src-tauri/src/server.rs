@@ -17,7 +17,6 @@ use kiro_account_manager::{
     clients::kiro_auth_client::KiroAuthServiceClient,
     commands::{
         account_cmd::{self, UpdateAccountParams},
-        app_data_cmd,
         app_settings_cmd::{self, AppSettings},
         auth_cmd, cache_cmd,
         common::{
@@ -373,14 +372,14 @@ async fn dispatch_command(
         "get_gateway_status" => gateway_cmd::get_gateway_status(state)
             .await
             .map(|status| json!(status)),
-        "get_gateway_log_dir" => gateway_cmd::get_gateway_log_dir(ctx.handle.clone())
-            .await
-            .map(|path| json!(path)),
+        "get_gateway_log_dir" => {
+            gateway::gateway_log_dir_path().map(|path| json!(path.to_string_lossy().to_string()))
+        }
         // A Railway process cannot open a folder on the user's desktop. Return
         // the persistent log path so the web UI can display/copy it instead.
-        "open_gateway_log_dir" => gateway_cmd::get_gateway_log_dir(ctx.handle.clone())
-            .await
-            .map(|path| json!(path)),
+        "open_gateway_log_dir" => {
+            gateway::gateway_log_dir_path().map(|path| json!(path.to_string_lossy().to_string()))
+        }
         "get_gateway_request_logs" => gateway_cmd::get_gateway_request_logs(
             state,
             args.get("limit")
@@ -505,9 +504,9 @@ async fn dispatch_command(
                 .await
                 .map(|_| Value::Null)
         }
-        "get_app_data_dir" => {
-            app_data_cmd::get_app_data_dir(ctx.handle.clone()).map(|path| json!(path))
-        }
+        "get_app_data_dir" => Ok(json!(core::paths::app_data_dir_or_default()
+            .display()
+            .to_string())),
         "open_app_data_dir" => Ok(json!(core::paths::app_data_dir_or_default()
             .display()
             .to_string())),

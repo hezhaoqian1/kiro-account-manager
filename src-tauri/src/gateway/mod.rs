@@ -1217,6 +1217,13 @@ pub fn gateway_log_dir(_app: &AppHandle) -> Result<PathBuf, String> {
     gateway_log_dir_raw()
 }
 
+/// Runtime-independent log directory accessor used by the headless server.
+/// The desktop command keeps its Tauri `AppHandle` signature for compatibility,
+/// while Railway has no Wry runtime to pass in.
+pub fn gateway_log_dir_path() -> Result<PathBuf, String> {
+    gateway_log_dir_raw()
+}
+
 pub fn get_gateway_log_dir(app: &AppHandle) -> Result<String, String> {
     gateway_log_dir(app).map(|path| path.to_string_lossy().to_string())
 }
