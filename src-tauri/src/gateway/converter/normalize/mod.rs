@@ -136,7 +136,7 @@ pub fn build_normalized_request_from_payload(
         }
     });
 
-    NormalizedRequest {
+    let mut normalized = NormalizedRequest {
         model,
         messages,
         stream: payload
@@ -183,10 +183,12 @@ pub fn build_normalized_request_from_payload(
             .and_then(Value::as_bool)
             .unwrap_or(false),
         tool_name_map,
-    }
+    };
+    override_thinking_from_model_name(&mut normalized);
+    normalized
 }
 
-/// 检测模型名是否包含 "thinking" 后缀，若包含则覆写 thinking 配置
+/// Claude 对外使用标准模型名，但网关默认以 thinking 模式调用。
 ///
 /// 根据 Anthropic 官方文档 (https://platform.claude.com/docs/en/docs/about-claude/models):
 ///
@@ -202,7 +204,11 @@ pub fn build_normalized_request_from_payload(
 /// budget_tokens 固定为 20000
 pub fn override_thinking_from_model_name(request: &mut NormalizedRequest) {
     let model_lower = request.model.to_lowercase();
-    if !model_lower.contains("thinking") {
+    let is_claude = model_lower.starts_with("claude-")
+        || model_lower == "sonnet"
+        || model_lower == "opus"
+        || model_lower == "haiku";
+    if !is_claude || request.thinking.is_some() {
         return;
     }
 
@@ -221,7 +227,7 @@ pub fn override_thinking_from_model_name(request: &mut NormalizedRequest) {
     };
 
     log::info!(
-        "[Gateway] 模型名 {} 包含 thinking 后缀，覆写 thinking 配置为 {}",
+        "[Gateway] Claude 模型 {} 默认启用 thinking，配置为 {}",
         request.model,
         thinking_type
     );

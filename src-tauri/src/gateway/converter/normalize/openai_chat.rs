@@ -224,7 +224,7 @@ pub fn normalize_openai_chat_request(request: &OpenAIChatRequest) -> Result<Norm
         }
     }
 
-    Ok(NormalizedRequest {
+    let mut normalized = NormalizedRequest {
         model: request.model.clone(),
         messages,
         stream: request.stream,
@@ -238,7 +238,9 @@ pub fn normalize_openai_chat_request(request: &OpenAIChatRequest) -> Result<Norm
         thinking: None,
         include_usage,
         tool_name_map,
-    })
+    };
+    override_thinking_from_model_name(&mut normalized);
+    Ok(normalized)
 }
 
 pub fn convert_openai_chat_messages(messages: Option<&Value>) -> Vec<NormalizedMessage> {

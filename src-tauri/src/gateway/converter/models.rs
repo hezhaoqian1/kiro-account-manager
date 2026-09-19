@@ -81,7 +81,7 @@ pub fn is_kiro_supported_model_format(model: &str) -> bool {
 /// 规则：
 /// - 去掉日期后缀 -20xxxxxx（8位数字）
 /// - 版本号横杠转点号：claude-{family}-{major}-{minor} → claude-{family}-{major}.{minor}
-/// - 保留 -thinking 后缀（Kiro 通过模型 ID 区分是否启用思考）
+/// - 兼容并移除 -thinking 后缀（thinking 由请求配置和 system prompt 控制）
 /// - 已经是点号格式的直接返回
 pub fn normalize_claude_model_format(model: &str) -> String {
     let mut s = model.to_string();
@@ -156,20 +156,21 @@ pub fn normalize_claude_model_format(model: &str) -> String {
 /// Free 用户不可用：所有 Opus 系列、Sonnet 4.6+
 /// GPT-5.6 不可用时降级到 gpt-5.6-luna（最便宜变体），避免跨协议降级
 ///
-/// 简单策略：所有不可用模型一律降级到 claude-sonnet-4.5（保留 -thinking 后缀）
+/// 简单策略：所有不可用模型一律降级到 claude-sonnet-4.5
 pub fn get_internal_model_id_with_fallback(
     external_model: &str,
     available_models: &[String],
 ) -> Result<String, String> {
     let mapped_model = get_internal_model_id(external_model)?;
 
-    // 检查是否在可用列表中
-    if available_models.contains(&mapped_model) {
+    // Kiro 账号接口在不同版本中可能返回带或不带 -thinking 的模型 ID。
+    // 统一归一化后再比较，避免公开模型名变化导致错误降级。
+    let model_is_available = available_models.iter().any(|available| {
+        normalize_claude_model_format(available) == mapped_model
+    });
+    if model_is_available {
         return Ok(mapped_model);
     }
-
-    // 检测原始模型名是否要求 thinking（用于降级后保留 -thinking 后缀）
-    let requires_thinking = external_model.to_lowercase().contains("thinking");
 
     // GPT-5.6 系列降级到最便宜的 luna 变体（避免跨协议降级到 Claude）
     if mapped_model.starts_with("gpt-5.6-") {
@@ -184,11 +185,7 @@ pub fn get_internal_model_id_with_fallback(
     }
 
     // 简单粗暴：一律降级到 claude-sonnet-4.5（Free 用户最高可用模型）
-    let fallback = if requires_thinking {
-        "claude-sonnet-4.5-thinking"
-    } else {
-        "claude-sonnet-4.5"
-    };
+    let fallback = "claude-sonnet-4.5";
 
     log::warn!(
         "[Gateway] 模型 {} 不在可用列表中，降级到 {}",
@@ -205,21 +202,22 @@ pub fn normalize_external_model_alias(external_model: &str) -> String {
 
 pub fn get_available_models() -> Vec<ModelInfo> {
     // 数据来源：Kiro ListAvailableModels API 实际返回
-    // 注意：Claude 模型只保留 -thinking 版本，不带后缀的已删除
-    //       GPT-5.6 系列是 Kiro 原生 GPT 模型，没有 thinking 变体
+    // 对外使用标准 Claude 模型名；Claude 的 thinking 由网关统一启用，
+    // 不把实现细节暴露成额外的 -thinking 模型 ID。
+    // GPT-5.6 系列是 Kiro 原生 GPT 模型，没有 thinking 变体。
     [
         // 自动选择
         ("auto", "anthropic"),
-        // Claude 系列（仅 thinking 版本）
-        ("claude-sonnet-5-thinking", "anthropic"),
-        ("claude-opus-4.8-thinking", "anthropic"),
-        ("claude-opus-4.7-thinking", "anthropic"),
-        ("claude-opus-4.6-thinking", "anthropic"),
-        ("claude-sonnet-4.6-thinking", "anthropic"),
-        ("claude-opus-4.5-thinking", "anthropic"),
-        ("claude-sonnet-4.5-thinking", "anthropic"),
-        ("claude-haiku-4.5-thinking", "anthropic"),
-        ("claude-sonnet-4-thinking", "anthropic"),
+        // Claude 系列：公开标准名称，网关默认启用 thinking
+        ("claude-sonnet-5", "anthropic"),
+        ("claude-opus-4.8", "anthropic"),
+        ("claude-opus-4.7", "anthropic"),
+        ("claude-opus-4.6", "anthropic"),
+        ("claude-sonnet-4.6", "anthropic"),
+        ("claude-opus-4.5", "anthropic"),
+        ("claude-sonnet-4.5", "anthropic"),
+        ("claude-haiku-4.5", "anthropic"),
+        ("claude-sonnet-4", "anthropic"),
         // GPT-5.6 系列（Kiro 原生 GPT 模型）
         ("gpt-5.6-sol", "openai"),
         ("gpt-5.6-terra", "openai"),
